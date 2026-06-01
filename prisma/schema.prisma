@@ -1,0 +1,89 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Pessoa {
+  id           String   @id @default(cuid())
+  nome         String
+  tipo         String   // "funcionario" | "apoiador" | "contato"
+  cargo        String?
+  email        String?
+  telefone     String?
+  twitter      String?
+  instagram    String?
+  facebook     String?
+  telegramUser String?
+  ativo        Boolean  @default(true)
+  observacoes  String?
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+  posts        Post[]
+  demandas     Demanda[]
+}
+
+model Post {
+  id         String   @id @default(cuid())
+  plataforma String
+  conteudo   String
+  url        String?
+  likes      Int      @default(0)
+  shares     Int      @default(0)
+  sentimento String?
+  pessoaId   String?
+  pessoa     Pessoa?  @relation(fields: [pessoaId], references: [id])
+  palavra    String?
+  criadoEm  DateTime @default(now())
+}
+
+model Demanda {
+  id           String   @id @default(cuid())
+  titulo       String
+  descricao    String
+  status       String   @default("aberta")
+  prioridade   String   @default("media")
+  origem       String?
+  pessoaId     String?
+  pessoa       Pessoa?  @relation(fields: [pessoaId], references: [id])
+  resposta     String?
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+}
+
+model Atividade {
+  id        String   @id @default(cuid())
+  tipo      String
+  titulo    String
+  descricao String?
+  data      DateTime
+  resultado String?
+  criadoEm DateTime @default(now())
+}
+
+model PalavraChave {
+  id      String  @id @default(cuid())
+  palavra String  @unique
+  ativa   Boolean @default(true)
+}
+
+model TelegramMensagem {
+  id         String   @id @default(cuid())
+  chatId     String
+  userId     String?
+  username   String?
+  nome       String?
+  mensagem   String
+  respondida Boolean  @default(false)
+  resposta   String?
+  criadoEm  DateTime @default(now())
+}
+
+model Configuracao {
+  id    String @id @default(cuid())
+  chave String @unique
+  valor String
+}
