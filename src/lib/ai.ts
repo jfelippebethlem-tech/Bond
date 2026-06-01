@@ -1,22 +1,34 @@
-import Anthropic from '@anthropic-ai/sdk'
+import Groq from 'groq-sdk'
 
-let client: Anthropic | null = null
+let client: Groq | null = null
 
 function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) return null
+  if (!process.env.GROQ_API_KEY) return null
   if (!client) {
-    client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+    client = new Groq({ apiKey: process.env.GROQ_API_KEY })
   }
   return client
 }
 
-export async function gerarResposta(
-  demanda: string,
-  contexto?: string
-): Promise<string> {
-  const anthropic = getClient()
-  if (!anthropic) {
-    return 'Configure a chave da API Anthropic em .env para usar o assistente de IA.'
+const MODEL_FAST = 'llama-3.1-8b-instant'
+const MODEL_SMART = 'llama-3.3-70b-versatile'
+
+async function chat(model: string, prompt: string, maxTokens = 1024): Promise<string> {
+  const groq = getClient()
+  if (!groq) return ''
+
+  const completion = await groq.chat.completions.create({
+    model,
+    max_tokens: maxTokens,
+    messages: [{ role: 'user', content: prompt }],
+  })
+
+  return completion.choices[0]?.message?.content ?? ''
+}
+
+export async function gerarResposta(demanda: string, contexto?: string): Promise<string> {
+  if (!getClient()) {
+    return 'Configure GROQ_API_KEY no .env para usar o assistente de IA (gratuito em console.groq.com).'
   }
 
   const prompt = `Você é um assistente de um deputado estadual brasileiro.
@@ -27,39 +39,21 @@ ${contexto ? `\nCONTEXTO ADICIONAL: ${contexto}` : ''}
 
 Responda de forma profissional, em português, com tom respeitoso e solucionador.`
 
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const content = message.content[0]
-  if (content.type === 'text') return content.text
-  return 'Erro ao gerar resposta.'
+  const result = await chat(MODEL_SMART, prompt, 1024)
+  return result || 'Erro ao gerar resposta.'
 }
 
 export async function analisarSentimento(texto: string): Promise<string> {
-  const anthropic = getClient()
-  if (!anthropic) return 'neutro'
+  if (!getClient()) return 'neutro'
 
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 10,
-    messages: [
-      {
-        role: 'user',
-        content: `Classifique o sentimento deste texto como exatamente uma palavra: "positivo", "negativo" ou "neutro".\nTexto: "${texto}"\nResposta (apenas uma palavra):`,
-      },
-    ],
-  })
+  const prompt = `Classifique o sentimento deste texto como exatamente uma palavra: "positivo", "negativo" ou "neutro".
+Texto: "${texto}"
+Resposta (apenas uma palavra):`
 
-  const content = message.content[0]
-  if (content.type === 'text') {
-    const s = content.text.toLowerCase().trim()
-    if (s.includes('positivo')) return 'positivo'
-    if (s.includes('negativo')) return 'negativo'
-    return 'neutro'
-  }
+  const result = await chat(MODEL_FAST, prompt, 5)
+  const s = result.toLowerCase().trim()
+  if (s.includes('positivo')) return 'positivo'
+  if (s.includes('negativo')) return 'negativo'
   return 'neutro'
 }
 
@@ -68,9 +62,8 @@ export async function gerarPostRedeSocial(
   plataforma: string,
   tom: string
 ): Promise<string> {
-  const anthropic = getClient()
-  if (!anthropic) {
-    return 'Configure a chave da API Anthropic em .env para usar o assistente de IA.'
+  if (!getClient()) {
+    return 'Configure GROQ_API_KEY no .env para usar o assistente de IA (gratuito em console.groq.com).'
   }
 
   const limits: Record<string, number> = {
@@ -80,21 +73,11 @@ export async function gerarPostRedeSocial(
   }
   const limit = limits[plataforma.toLowerCase()] || 500
 
-  const message = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
-    messages: [
-      {
-        role: 'user',
-        content: `Crie um post para ${plataforma} sobre: ${tema}
+  const prompt = `Crie um post para ${plataforma} sobre: ${tema}
 Tom: ${tom}
 Limite de caracteres: ${limit}
-Escreva apenas o texto do post, sem explicações adicionais.`,
-      },
-    ],
-  })
+Escreva apenas o texto do post, sem explicações adicionais.`
 
-  const content = message.content[0]
-  if (content.type === 'text') return content.text
-  return 'Erro ao gerar post.'
+  const result = await chat(MODEL_SMART, prompt, 512)
+  return result || 'Erro ao gerar post.'
 }
