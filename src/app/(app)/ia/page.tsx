@@ -82,7 +82,7 @@ export default function IAPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Assistente IA</h1>
         <p className="text-gray-500 text-sm mt-1">
-          Powered by Claude — gere respostas, posts e análises automaticamente
+          Powered by Llama 3 via Groq (gratuito) — gere respostas, posts e análises automaticamente
         </p>
       </div>
 
@@ -90,8 +90,10 @@ export default function IAPage() {
         <div className="card mb-6 p-4 bg-amber-50 border-amber-100">
           <p className="text-sm text-amber-700">
             <strong>Configure sua chave da API:</strong> adicione{' '}
-            <code className="bg-amber-100 px-1 rounded">ANTHROPIC_API_KEY=sua_chave</code> no arquivo{' '}
-            <code className="bg-amber-100 px-1 rounded">.env</code> para ativar o assistente de IA.
+            <code className="bg-amber-100 px-1 rounded">GROQ_API_KEY=sua_chave</code> no arquivo{' '}
+            <code className="bg-amber-100 px-1 rounded">.env</code> para ativar o assistente de IA.{' '}
+            Chave gratuita em{' '}
+            <a href="https://console.groq.com" target="_blank" rel="noopener noreferrer" className="underline">console.groq.com</a>.
           </p>
         </div>
       )}

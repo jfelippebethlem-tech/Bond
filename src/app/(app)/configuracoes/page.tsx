@@ -148,18 +148,16 @@ export default function ConfiguracoesPage() {
           </p>
           <div className="space-y-2">
             <div className="flex items-center gap-3 p-3 bg-white rounded-lg border border-gray-200">
-              <Bot className="w-5 h-5 text-orange-500" />
+              <Bot className="w-5 h-5 text-green-500" />
               <div>
-                <p className="text-sm font-medium text-gray-700">Claude AI (Anthropic)</p>
+                <p className="text-sm font-medium text-gray-700">Llama 3 via Groq <span className="text-green-600 font-semibold">(Gratuito)</span></p>
                 <p className="text-xs text-gray-400">
-                  Variável: <code>ANTHROPIC_API_KEY</code>
+                  Variável: <code>GROQ_API_KEY</code> — obtenha em console.groq.com
                 </p>
               </div>
               <div className="ml-auto">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                  process.env.NODE_ENV === 'production' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                }`}>
-                  {process.env.NODE_ENV === 'production' ? 'Configurado' : 'Ver .env'}
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">
+                  Grátis
                 </span>
               </div>
             </div>

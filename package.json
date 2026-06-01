@@ -12,28 +12,28 @@
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@prisma/client": "^5.13.0",
+    "clsx": "^2.1.1",
+    "date-fns": "^3.6.0",
+    "groq-sdk": "^0.7.0",
+    "jose": "^5.2.4",
+    "lucide-react": "^0.378.0",
     "next": "14.2.3",
+    "node-telegram-bot-api": "^0.66.0",
     "react": "^18",
     "react-dom": "^18",
-    "@prisma/client": "^5.13.0",
-    "@anthropic-ai/sdk": "^0.21.0",
-    "lucide-react": "^0.378.0",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.3.0",
-    "date-fns": "^3.6.0",
-    "jose": "^5.2.4",
-    "node-telegram-bot-api": "^0.66.0"
+    "tailwind-merge": "^2.3.0"
   },
   "devDependencies": {
     "@types/node": "^20",
+    "@types/node-telegram-bot-api": "^0.64.7",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "@types/node-telegram-bot-api": "^0.64.7",
-    "prisma": "^5.13.0",
-    "typescript": "^5",
-    "tailwindcss": "^3.4.1",
     "autoprefixer": "^10.0.1",
     "postcss": "^8",
-    "tsx": "^4.10.5"
+    "prisma": "^5.13.0",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.10.5",
+    "typescript": "^5"
   }
 }
