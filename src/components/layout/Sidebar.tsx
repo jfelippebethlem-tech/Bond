@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Landmark,
+  Brain,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -27,6 +28,7 @@ const nav = [
   { href: '/produtividade', icon: BarChart3, label: 'Produtividade' },
   { href: '/telegram', icon: Send, label: 'Telegram' },
   { href: '/ia', icon: Bot, label: 'Assistente IA' },
+  { href: '/hermes', icon: Brain, label: 'Hermes Agent' },
   { href: '/configuracoes', icon: Settings, label: 'Configurações' },
 ]
 

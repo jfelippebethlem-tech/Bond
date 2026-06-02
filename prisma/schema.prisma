@@ -87,3 +87,36 @@ model Configuracao {
   chave String @unique
   valor String
 }
+
+model HermesMemoria {
+  id           String   @id @default(cuid())
+  tipo         String   // "padrao" | "preferencia" | "cidadao" | "assunto" | "estatistica" | "contexto"
+  chave        String
+  conteudo     String
+  relevancia   Float    @default(1.0)
+  criadoEm    DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  @@unique([tipo, chave])
+}
+
+model HermesJob {
+  id           String    @id @default(cuid())
+  tipo         String    // "analise_demanda" | "analise_post" | "analise_telegram" | "resumo_diario" | "chat"
+  payload      String    // JSON
+  status       String    @default("pendente") // "pendente" | "processando" | "concluido" | "erro"
+  resultado    String?
+  erro         String?
+  criadoEm    DateTime  @default(now())
+  processadoEm DateTime?
+}
+
+model HermesInsight {
+  id         String   @id @default(cuid())
+  titulo     String
+  descricao  String
+  tipo       String   @default("sugestao") // "alerta" | "sugestao" | "resumo" | "padrao" | "acao"
+  prioridade String   @default("media")   // "alta" | "media" | "baixa"
+  lido       Boolean  @default(false)
+  criadoEm  DateTime @default(now())
+}
