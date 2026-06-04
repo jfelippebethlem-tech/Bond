@@ -24,6 +24,7 @@ model Pessoa {
   atualizadoEm DateTime @updatedAt
   posts        Post[]
   demandas     Demanda[]
+  bondFas      BondFa[]
 }
 
 model Post {
@@ -173,10 +174,47 @@ model BondFa {
   totalComents Int      @default(0)
   totalShares  Int      @default(0)
   ultimaInter  DateTime?
+  pessoaId     String?
+  pessoa       Pessoa?  @relation(fields: [pessoaId], references: [id])
   criadoEm    DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
   @@unique([plataforma, externalId])
+}
+
+model BondInteracao {
+  id         String   @id @default(cuid())
+  plataforma String
+  externalId String
+  tipo       String   // "like" | "comment" | "share"
+  postId     String
+  criadoEm  DateTime @default(now())
+
+  @@unique([plataforma, externalId, tipo, postId])
+}
+
+model BondComentario {
+  id            String   @id @default(cuid())
+  plataforma    String
+  postId        String
+  comentarioId  String
+  autor         String?
+  autorId       String?
+  texto         String
+  respondido    Boolean  @default(false)
+  sugestaoIA    String?
+  respostaFinal String?
+  criadoEm     DateTime @default(now())
+
+  @@unique([plataforma, comentarioId])
+}
+
+model BondEstilo {
+  id         String   @id @default(cuid())
+  comentario String
+  resposta   String
+  plataforma String?
+  criadoEm  DateTime @default(now())
 }
 
 model BondInsight {

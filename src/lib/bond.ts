@@ -26,6 +26,69 @@ REGRAS — SIGA TODAS SEM EXCEÇÃO:
   return result.response.text() ?? ''
 }
 
+// ── Helpers internos ──────────────────────────────────────────────────────────
+
+function calcEngagement(likes = 0, comments = 0, shares = 0, impressions = 0): number {
+  if (!impressions) return 0
+  return parseFloat((((likes + comments + shares) / impressions) * 100).toFixed(2))
+}
+
+async function upsertFa(plataforma: string, externalId: string, nome: string | null, username: string | null, liked = true) {
+  await prisma.bondFa.upsert({
+    where: { plataforma_externalId: { plataforma, externalId } },
+    update: {
+      nome: nome ?? undefined,
+      username: username ?? undefined,
+      totalLikes: liked ? { increment: 1 } : undefined,
+      ultimaInter: new Date(),
+    },
+    create: {
+      plataforma,
+      externalId,
+      nome,
+      username,
+      totalLikes: liked ? 1 : 0,
+      ultimaInter: new Date(),
+    },
+  })
+  // Auto-link to Pessoa by username
+  if (username) await vincularPessoa(plataforma, externalId, username)
+}
+
+async function vincularPessoa(plataforma: string, externalId: string, username: string) {
+  const campo = plataforma === 'twitter' ? 'twitter' : plataforma === 'instagram' ? 'instagram' : 'facebook'
+  const pessoa = await prisma.pessoa.findFirst({
+    where: { [campo]: { contains: username } },
+  })
+  if (pessoa) {
+    await prisma.bondFa.updateMany({
+      where: { plataforma, externalId, pessoaId: null },
+      data: { pessoaId: pessoa.id },
+    })
+  }
+}
+
+async function registrarInteracao(plataforma: string, externalId: string, tipo: 'like' | 'comment' | 'share', postId: string) {
+  try {
+    await prisma.bondInteracao.upsert({
+      where: { plataforma_externalId_tipo_postId: { plataforma, externalId, tipo, postId } },
+      update: {},
+      create: { plataforma, externalId, tipo, postId },
+    })
+  } catch { /* duplicate on re-sync — ignore */ }
+}
+
+async function salvarComentario(
+  plataforma: string, postId: string, comentarioId: string,
+  autor: string | null, autorId: string | null, texto: string
+) {
+  await prisma.bondComentario.upsert({
+    where: { plataforma_comentarioId: { plataforma, comentarioId } },
+    update: {},
+    create: { plataforma, postId, comentarioId, autor, autorId, texto },
+  })
+}
+
 // ── Sincronização Twitter ─────────────────────────────────────────────────────
 
 export async function syncTwitter() {
@@ -97,9 +160,13 @@ export async function syncTwitter() {
       },
     })
 
-    // Atualiza fãs
-    for (const engager of allEngagers) {
-      await upsertFa('twitter', engager.id, engager.nome, engager.username, likers.some((l: { id: string }) => l.id === engager.id))
+    for (const liker of likers) {
+      await upsertFa('twitter', liker.id, liker.name, liker.username, true)
+      await registrarInteracao('twitter', liker.id, 'like', tweet.id)
+    }
+    for (const rt of retweeters) {
+      await upsertFa('twitter', rt.id, rt.name, rt.username, false)
+      await registrarInteracao('twitter', rt.id, 'share', tweet.id)
     }
     synced++
   }
@@ -183,7 +250,18 @@ export async function syncFacebook() {
       },
     })
 
-    for (const e of allEngagers) await upsertFa('facebook', e.id, e.nome, e.username)
+    for (const liker of likers) {
+      await upsertFa('facebook', liker.id, liker.name, null, true)
+      await registrarInteracao('facebook', liker.id, 'like', post.id)
+    }
+    for (const comment of comments) {
+      if (!comment.from?.id) continue
+      await upsertFa('facebook', comment.from.id, comment.from.name, null, false)
+      await registrarInteracao('facebook', comment.from.id, 'comment', post.id)
+      if (comment.id && comment.message) {
+        await salvarComentario('facebook', post.id, comment.id, comment.from.name, comment.from.id, comment.message)
+      }
+    }
     synced++
   }
 
@@ -249,7 +327,7 @@ export async function syncInstagram() {
         plataforma: 'instagram',
         postId: post.id,
         conteudo: post.caption ?? '',
-        tipo: post.media_type === 'VIDEO' ? 'video' : post.media_type === 'CAROUSEL_ALBUM' ? 'foto' : 'foto',
+        tipo: post.media_type === 'VIDEO' ? 'video' : 'foto',
         url: post.permalink,
         imagemUrl: post.media_url ?? post.thumbnail_url,
         likes: post.like_count ?? 0,
@@ -263,7 +341,13 @@ export async function syncInstagram() {
       },
     })
 
-    for (const c of commenters) await upsertFa('instagram', c.id, c.nome, c.username)
+    for (const c of comments) {
+      await upsertFa('instagram', c.id, c.username, c.username, false)
+      await registrarInteracao('instagram', c.id, 'comment', post.id)
+      if (c.text) {
+        await salvarComentario('instagram', post.id, c.id, c.username, c.id, c.text)
+      }
+    }
     synced++
   }
 
@@ -281,6 +365,134 @@ export async function syncAll() {
   }
 }
 
+// ── Rankings ──────────────────────────────────────────────────────────────────
+
+export async function gerarRankingGeral() {
+  const fas = await prisma.bondFa.findMany({
+    include: { pessoa: { select: { id: true, nome: true, tipo: true } } },
+    orderBy: { totalLikes: 'desc' },
+  })
+  return fas
+    .map(fa => ({
+      ...fa,
+      score: fa.totalLikes + fa.totalComents * 2 + fa.totalShares * 3,
+    }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50)
+}
+
+export async function gerarRankingSemanal() {
+  const umaSemanaAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const interacoes = await prisma.bondInteracao.findMany({
+    where: { criadoEm: { gte: umaSemanaAtras } },
+  })
+
+  const map = new Map<string, { plataforma: string; externalId: string; likes: number; comments: number; shares: number }>()
+  for (const i of interacoes) {
+    const key = `${i.plataforma}:${i.externalId}`
+    const entry = map.get(key) ?? { plataforma: i.plataforma, externalId: i.externalId, likes: 0, comments: 0, shares: 0 }
+    if (i.tipo === 'like') entry.likes++
+    else if (i.tipo === 'comment') entry.comments++
+    else if (i.tipo === 'share') entry.shares++
+    map.set(key, entry)
+  }
+
+  const ranked = Array.from(map.values())
+    .map(e => ({ ...e, score: e.likes + e.comments * 2 + e.shares * 3 }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50)
+
+  // Enrich with names from BondFa
+  return Promise.all(
+    ranked.map(async r => {
+      const fa = await prisma.bondFa.findUnique({
+        where: { plataforma_externalId: { plataforma: r.plataforma, externalId: r.externalId } },
+        include: { pessoa: { select: { id: true, nome: true, tipo: true } } },
+      })
+      return {
+        ...r,
+        nome: fa?.nome ?? null,
+        username: fa?.username ?? null,
+        fotoUrl: fa?.fotoUrl ?? null,
+        pessoaId: fa?.pessoaId ?? null,
+        pessoa: fa?.pessoa ?? null,
+      }
+    })
+  )
+}
+
+// ── Comentários — resposta com aprendizado de estilo ──────────────────────────
+
+export async function buscarComentariosPendentes() {
+  return prisma.bondComentario.findMany({
+    where: { respondido: false },
+    orderBy: { criadoEm: 'desc' },
+    take: 50,
+  })
+}
+
+export async function sugerirResposta(comentarioId: string, plataforma: string): Promise<string> {
+  const comentario = await prisma.bondComentario.findUnique({
+    where: { plataforma_comentarioId: { plataforma, comentarioId } },
+  })
+  if (!comentario) return ''
+
+  const exemplos = await prisma.bondEstilo.findMany({
+    orderBy: { criadoEm: 'desc' },
+    take: 8,
+  })
+
+  const estiloText = exemplos.length > 0
+    ? `EXEMPLOS DE RESPOSTAS JÁ APROVADAS PELO DEPUTADO (use como referência de tom e estilo):\n` +
+      exemplos.map((e, i) => `Exemplo ${i + 1}:\nComentário: "${e.comentario}"\nResposta do deputado: "${e.resposta}"`).join('\n---\n')
+    : `ESTILO PADRÃO (não há exemplos ainda): linguagem próxima, cordial, sem formalidades. Tom de quem conhece a pessoa.`
+
+  const sugestao = await bondAI(`Tarefa: escrever UMA resposta para o comentário abaixo, no estilo do deputado.
+
+COMENTÁRIO RECEBIDO:
+Autor: ${comentario.autor ?? 'Seguidor'}
+Plataforma: ${comentario.plataforma}
+Texto do comentário: "${comentario.texto}"
+
+${estiloText}
+
+REGRAS OBRIGATÓRIAS — siga todas sem exceção:
+1. Escreva APENAS o texto da resposta — sem aspas, sem "Resposta:", sem prefixo de qualquer tipo.
+2. Tom: cordial, humano, próximo. Como se fosse o próprio deputado digitando no celular.
+3. Tamanho: de 1 a 3 frases curtas. NUNCA mais que 3 frases.
+4. Se o comentário for elogio: agradeça com genuinidade e brevidade. Pode mencionar o nome do autor.
+5. Se o comentário for crítica ou reclamação: responda com empatia, sem defensividade, ofereça ajuda se fizer sentido.
+6. Se o comentário for pergunta: responda diretamente e de forma útil.
+7. Se o comentário for neutro: reconheça e dê continuidade natural.
+8. NÃO use "prezado", "estimado", "vossa excelência", "agradecemos", "informamos" ou qualquer linguagem formal/burocrática.
+9. Pode começar pelo primeiro nome do autor se disponível, ex: "Obrigado, João!" — mas só se soar natural.`, 150)
+
+  await prisma.bondComentario.update({
+    where: { plataforma_comentarioId: { plataforma, comentarioId } },
+    data: { sugestaoIA: sugestao },
+  })
+
+  return sugestao
+}
+
+export async function aprovarResposta(comentarioId: string, plataforma: string, textoFinal: string) {
+  const comentario = await prisma.bondComentario.update({
+    where: { plataforma_comentarioId: { plataforma, comentarioId } },
+    data: { respondido: true, respostaFinal: textoFinal },
+  })
+  await prisma.bondEstilo.create({
+    data: { comentario: comentario.texto, resposta: textoFinal, plataforma },
+  })
+  return comentario
+}
+
+export async function rejeitarComentario(comentarioId: string, plataforma: string) {
+  await prisma.bondComentario.update({
+    where: { plataforma_comentarioId: { plataforma, comentarioId } },
+    data: { respondido: true },
+  })
+}
+
 // ── Análises AI ───────────────────────────────────────────────────────────────
 
 export async function analisarTopPosts() {
@@ -292,13 +504,13 @@ export async function analisarTopPosts() {
   if (!posts.length) return null
 
   const resumo = posts.map(p =>
-    `[${p.plataforma}] ${p.conteudo.slice(0, 100)} — ❤️${p.likes} 💬${p.comentarios} 🔁${p.compartilhos} 📊${p.engajamento.toFixed(1)}%`
+    `[${p.plataforma}] ${p.conteudo.slice(0, 100)} — curtidas:${p.likes} comentários:${p.comentarios} compartilhos:${p.compartilhos} engajamento:${p.engajamento.toFixed(1)}%`
   ).join('\n')
 
   const analise = await bondAI(`Você recebeu dados dos posts com maior engajamento de um deputado estadual.
 Tarefa: analisar os dados abaixo e identificar padrões. Siga o formato EXATO da resposta.
 
-DADOS DOS POSTS (formato: [plataforma] texto — curtidas comentários compartilhamentos engajamento%):
+DADOS DOS POSTS (formato: [plataforma] texto — curtidas comentários compartilhos engajamento%):
 ${resumo}
 
 RESPONDA EXATAMENTE NESTE FORMATO — use estes títulos em maiúsculas, sem introdução:
@@ -320,11 +532,7 @@ RECOMENDAÇÕES PRÁTICAS:
 - Recomendação 3: [ação específica que o deputado deve tomar]`, 800)
 
   await prisma.bondInsight.create({
-    data: {
-      titulo: 'Análise dos Posts de Maior Engajamento',
-      descricao: analise,
-      tipo: 'performance',
-    },
+    data: { titulo: 'Análise dos Posts de Maior Engajamento', descricao: analise, tipo: 'performance' },
   })
 
   return analise
@@ -338,13 +546,13 @@ export async function analisarAudiencia() {
   if (!fas.length) return null
 
   const resumo = fas.map(f =>
-    `${f.nome ?? f.username ?? f.externalId} (${f.plataforma}): ❤️${f.totalLikes} 💬${f.totalComents} 🔁${f.totalShares}`
+    `${f.nome ?? f.username ?? f.externalId} (${f.plataforma}): curtidas:${f.totalLikes} comentários:${f.totalComents} compartilhos:${f.totalShares}`
   ).join('\n')
 
   const analise = await bondAI(`Você recebeu dados dos seguidores que mais interagiram com as redes sociais de um deputado estadual.
 Tarefa: analisar o perfil da audiência. Siga o formato EXATO da resposta.
 
-DADOS DOS ENGAJADORES (formato: nome (plataforma): curtidas comentários compartilhamentos):
+DADOS DOS ENGAJADORES (formato: nome (plataforma): curtidas comentários compartilhos):
 ${resumo}
 
 RESPONDA EXATAMENTE NESTE FORMATO — use estes títulos em maiúsculas, sem introdução:
@@ -365,11 +573,7 @@ COMO TRANSFORMAR FÃS EM MULTIPLICADORES:
 - Ação 2: [o que fazer para que os fãs compartilhem o conteúdo com outras pessoas]`, 600)
 
   await prisma.bondInsight.create({
-    data: {
-      titulo: 'Análise da Audiência — Top Engajadores',
-      descricao: analise,
-      tipo: 'audiencia',
-    },
+    data: { titulo: 'Análise da Audiência — Top Engajadores', descricao: analise, tipo: 'audiencia' },
   })
 
   return analise
@@ -486,15 +690,15 @@ export async function chatComBond(
 ): Promise<string> {
   const [topPosts, topFas, perfis] = await Promise.all([
     prisma.bondPost.findMany({ orderBy: { engajamento: 'desc' }, take: 5 }),
-    prisma.bondFa.findMany({ orderBy: { totalLikes: 'desc' }, take: 10 }),
+    prisma.bondFa.findMany({ orderBy: { totalLikes: 'desc' }, take: 10, include: { pessoa: { select: { nome: true, tipo: true } } } }),
     prisma.bondPerfil.findMany({ where: { ativo: true } }),
   ])
 
-  const contexto = `
-PLATAFORMAS CONECTADAS: ${perfis.map(p => `${p.plataforma} (@${p.handle}, ${p.seguidores} seguidores)`).join(' | ') || 'nenhuma'}
-TOP POSTS: ${topPosts.map(p => `[${p.plataforma}] ${p.conteudo.slice(0, 80)} (❤️${p.likes})`).join(' | ') || 'sem dados'}
-TOP FÃS: ${topFas.map(f => `${f.nome ?? f.username} (${f.plataforma})`).join(', ') || 'sem dados'}
-`
+  const contexto = [
+    `PLATAFORMAS CONECTADAS: ${perfis.map(p => `${p.plataforma} (@${p.handle}, ${p.seguidores} seguidores)`).join(' | ') || 'nenhuma'}`,
+    `TOP POSTS: ${topPosts.map(p => `[${p.plataforma}] ${p.conteudo.slice(0, 80)} (curtidas:${p.likes})`).join(' | ') || 'sem dados'}`,
+    `TOP FÃS: ${topFas.map(f => `${f.nome ?? f.username}${f.pessoa ? ` [APOIADOR: ${f.pessoa.nome}]` : ''} (${f.plataforma})`).join(', ') || 'sem dados'}`,
+  ].join('\n')
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '')
   const model = genAI.getGenerativeModel({
@@ -523,31 +727,4 @@ REGRAS — SIGA TODAS SEM EXCEÇÃO:
   const chat = model.startChat({ history: hist })
   const result = await chat.sendMessage(mensagem)
   return result.response.text()
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────────
-
-function calcEngagement(likes = 0, comments = 0, shares = 0, impressions = 0): number {
-  if (!impressions) return 0
-  return parseFloat((((likes + comments + shares) / impressions) * 100).toFixed(2))
-}
-
-async function upsertFa(plataforma: string, externalId: string, nome: string | null, username: string | null, liked = true) {
-  await prisma.bondFa.upsert({
-    where: { plataforma_externalId: { plataforma, externalId } },
-    update: {
-      nome: nome ?? undefined,
-      username: username ?? undefined,
-      totalLikes: liked ? { increment: 1 } : undefined,
-      ultimaInter: new Date(),
-    },
-    create: {
-      plataforma,
-      externalId,
-      nome,
-      username,
-      totalLikes: liked ? 1 : 0,
-      ultimaInter: new Date(),
-    },
-  })
 }
