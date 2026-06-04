@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
-import { syncAll, syncTwitter, syncFacebook, syncInstagram, gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia } from '@/lib/bond'
+import {
+  syncAll, syncTwitter, syncFacebook, syncInstagram,
+  gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia,
+  gerarRankingGeral, gerarRankingSemanal,
+  buscarComentariosPendentes, sugerirResposta, aprovarResposta, rejeitarComentario,
+} from '@/lib/bond'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -23,8 +28,21 @@ export async function GET(req: NextRequest) {
       where: plataforma ? { plataforma } : undefined,
       orderBy: [{ totalLikes: 'desc' }, { totalComents: 'desc' }],
       take: 50,
+      include: { pessoa: { select: { id: true, nome: true, tipo: true } } },
     })
     return NextResponse.json(fas)
+  }
+
+  if (tipo === 'ranking_geral') {
+    return NextResponse.json(await gerarRankingGeral())
+  }
+
+  if (tipo === 'ranking_semanal') {
+    return NextResponse.json(await gerarRankingSemanal())
+  }
+
+  if (tipo === 'comentarios') {
+    return NextResponse.json(await buscarComentariosPendentes())
   }
 
   if (tipo === 'insights') {
@@ -43,18 +61,19 @@ export async function GET(req: NextRequest) {
   }
 
   // Default: overview
-  const [perfis, totalPosts, totalFas, insightsNaoLidos, stats] = await Promise.all([
+  const [perfis, totalPosts, totalFas, insightsNaoLidos, comentariosPendentes, stats] = await Promise.all([
     prisma.bondPerfil.findMany({ where: { ativo: true } }),
     prisma.bondPost.count(),
     prisma.bondFa.count(),
     prisma.bondInsight.count({ where: { lido: false } }),
+    prisma.bondComentario.count({ where: { respondido: false } }),
     prisma.bondPost.aggregate({
       _sum: { likes: true, comentarios: true, compartilhos: true, alcance: true },
       _avg: { engajamento: true },
     }),
   ])
 
-  return NextResponse.json({ perfis, totalPosts, totalFas, insightsNaoLidos, stats })
+  return NextResponse.json({ perfis, totalPosts, totalFas, insightsNaoLidos, comentariosPendentes, stats })
 }
 
 export async function POST(req: NextRequest) {
@@ -89,6 +108,24 @@ export async function POST(req: NextRequest) {
       posts: posts.status === 'fulfilled' ? posts.value : null,
       audiencia: audiencia.status === 'fulfilled' ? audiencia.value : null,
     })
+  }
+
+  if (acao === 'sugerir_resposta') {
+    const { comentarioId, plataforma } = body
+    const sugestao = await sugerirResposta(comentarioId, plataforma)
+    return NextResponse.json({ sugestao })
+  }
+
+  if (acao === 'aprovar_resposta') {
+    const { comentarioId, plataforma, texto } = body
+    await aprovarResposta(comentarioId, plataforma, texto)
+    return NextResponse.json({ ok: true })
+  }
+
+  if (acao === 'rejeitar_comentario') {
+    const { comentarioId, plataforma } = body
+    await rejeitarComentario(comentarioId, plataforma)
+    return NextResponse.json({ ok: true })
   }
 
   if (acao === 'salvar_rascunho') {
