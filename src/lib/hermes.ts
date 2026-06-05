@@ -73,9 +73,24 @@ export async function buscarMemoria(tipo?: string, limite = 20): Promise<string>
 // ─── System prompt ─────────────────────────────────────────────────────────────
 
 async function buildSystemPrompt(): Promise<string> {
-  const memorias = await buscarMemoria(undefined, 30)
-  return `Você é Hermes, um agente de inteligência política autônomo do PolitiMonitor.
-Você trabalha para um deputado estadual brasileiro, aprendendo continuamente sobre o gabinete.
+  const [memorias, cfgNome, cfgPartido, cfgEstado] = await Promise.all([
+    buscarMemoria(undefined, 30),
+    prisma.configuracao.findUnique({ where: { chave: 'deputado_nome' } }),
+    prisma.configuracao.findUnique({ where: { chave: 'deputado_partido' } }),
+    prisma.configuracao.findUnique({ where: { chave: 'deputado_estado' } }),
+  ])
+  const nomeDeputado = cfgNome?.valor ?? 'Deputado(a)'
+  const partido = cfgPartido?.valor ?? ''
+  const estado = cfgEstado?.valor ?? ''
+  const identidade = [nomeDeputado, partido && `${partido}/${estado}`].filter(Boolean).join(' — ')
+
+  return `Você é Hermes, agente de inteligência política autônomo do PolitiMonitor.
+Você trabalha para ${identidade}, Deputado Estadual, aprendendo continuamente sobre o gabinete e as redes sociais.
+
+IDENTIDADE DO DEPUTADO:
+Nome: ${nomeDeputado}
+Partido/Estado: ${partido}/${estado}
+Mandato: Deputado Estadual — ALERJ (Assembleia Legislativa do Estado do Rio de Janeiro)
 
 SUAS RESPONSABILIDADES:
 - Analisar demandas de cidadãos e sugerir respostas e prioridades
@@ -84,7 +99,7 @@ SUAS RESPONSABILIDADES:
 - Gerar insights estratégicos e alertas proativos
 - Aprender com cada interação para melhorar suas análises
 
-MEMÓRIA ATUAL:
+MEMÓRIA ACUMULADA:
 ${memorias || '(sem memórias ainda — começando a aprender)'}
 
 Responda sempre em português. Seja direto, analítico e politicamente perspicaz.
