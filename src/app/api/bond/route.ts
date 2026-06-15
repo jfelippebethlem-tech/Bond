@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
-  gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia,
+  gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia, analiseProfunda,
   gerarRankingGeral, gerarRankingSemanal, gerarRankingCabos,
   buscarComentariosPendentes, sugerirResposta, aprovarResposta, rejeitarComentario,
 } from '@/lib/bond'
@@ -174,6 +174,11 @@ export async function POST(req: NextRequest) {
     const { mensagem, historico = [] } = body
     const resposta = await chatComBond(mensagem, historico)
     return NextResponse.json({ resposta })
+  }
+
+  if (acao === 'analise_profunda') {
+    const analise = await analiseProfunda()
+    return NextResponse.json({ analise })
   }
 
   if (acao === 'sugerir_conteudo') {

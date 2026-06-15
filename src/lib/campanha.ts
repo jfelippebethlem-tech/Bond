@@ -5,7 +5,7 @@ async function campanhaAI(prompt: string, maxTokens = 1200): Promise<string> {
   if (!process.env.GEMINI_API_KEY) return 'Configure GEMINI_API_KEY.'
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     systemInstruction: `Você é um estrategista digital especialista em campanhas eleitorais brasileiras.
 Analisa dados reais de redes sociais para dar diagnósticos precisos e acionáveis.
 Seja direto, use números quando disponíveis, e foque em ações práticas.

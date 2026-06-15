@@ -10,7 +10,7 @@ async function bondAI(prompt: string, maxTokens = 1024): Promise<string> {
   if (!process.env.GEMINI_API_KEY) return 'Configure GEMINI_API_KEY para usar a IA do Bond.'
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     systemInstruction: `Você é Bond. Função: analisar redes sociais de um deputado estadual brasileiro e gerar respostas úteis.
 
 REGRAS — SIGA TODAS SEM EXCEÇÃO:
@@ -645,6 +645,57 @@ RECOMENDAÇÕES PRÁTICAS:
   return analise
 }
 
+// Inteligência total: análise profunda de viralização + benchmark (direita) + algoritmo
+export async function analiseProfunda() {
+  const [top, bottom, porTipo] = await Promise.all([
+    prisma.bondPost.findMany({ orderBy: { engajamento: 'desc' }, take: 12 }),
+    prisma.bondPost.findMany({ where: { engajamento: { gt: 0 } }, orderBy: { engajamento: 'asc' }, take: 6 }),
+    prisma.bondPost.groupBy({ by: ['tipo'], _avg: { engajamento: true, alcance: true }, _count: true }),
+  ])
+  if (!top.length) return null
+
+  const fmt = (p: typeof top[number]) => `[${p.plataforma}/${p.tipo}] "${p.conteudo.slice(0, 120)}" — ${p.likes} likes ${p.comentarios} coment ${p.compartilhos} compart alcance:${p.alcance} eng:${p.engajamento.toFixed(1)}%`
+  const fmtTipo = porTipo.map((t) => `${t.tipo}: eng medio ${(t._avg.engajamento ?? 0).toFixed(1)}%, alcance medio ${Math.round(t._avg.alcance ?? 0)} (${t._count} posts)`).join(' | ')
+
+  const analise = await bondAI(`Voce e um estrategista de conteudo politico-digital de altissimo nivel. Analise os posts REAIS de um deputado estadual do RJ (campo da DIREITA) e produza inteligencia acionavel.
+
+POSTS QUE MAIS ENGAJARAM:
+${top.map(fmt).join('\n')}
+
+POSTS QUE MENOS ENGAJARAM:
+${bottom.map(fmt).join('\n')}
+
+DESEMPENHO MEDIO POR FORMATO: ${fmtTipo}
+
+RESPONDA EXATAMENTE NESTE FORMATO (titulos em maiusculas, texto simples, sem asteriscos, direto):
+
+1. O QUE VIRALIZOU E POR QUE:
+[3-4 frases: que temas/tom/gatilhos emocionais distinguem os top dos piores. Seja especifico citando os posts.]
+
+2. O QUE NAO ENGAJOU (E POR QUE):
+[2-3 frases sobre o padrao dos posts fracos e o erro a evitar.]
+
+3. CONTEUDO - TEMAS E FORMATOS:
+- Tema mais forte: [qual e por que engaja neste eleitorado]
+- Formato vencedor: [reel/video/foto/texto - qual rende mais aqui]
+- Gatilho que falta explorar: [um gatilho de viralizacao ainda subaproveitado]
+
+4. BENCHMARK - POLITICOS/PERSONALIDADES VIRAIS DA DIREITA:
+[3-4 frases: que METODOS os perfis de direita que mais viralizam usam (storytelling de indignacao, identidade "nos vs eles", clipes curtos com gancho nos 3 primeiros segundos, autenticidade/bastidores, pautas de costumes/seguranca/economia) e o que ESTE deputado deveria copiar/adaptar.]
+
+5. ALGORITMO - COMO ESPALHAR MAIS:
+[Liste 4 alavancas concretas do algoritmo do Instagram/Facebook (ex.: SAVES e SHARES pesam mais que likes; comentarios longos e respondidos; velocidade de engajamento na 1a hora; Reels > foto no alcance; tempo de visualizacao; postar no horario de pico da audiencia) e como aplicar.]
+
+6. PLANO DE ACAO (PROXIMOS 7 DIAS):
+- Acao 1: [especifica e mensuravel]
+- Acao 2: [especifica e mensuravel]
+- Acao 3: [especifica e mensuravel]
+- Acao 4: [especifica e mensuravel]`, 2200)
+
+  await prisma.bondInsight.create({ data: { titulo: 'Analise Profunda de Viralizacao', descricao: analise, tipo: 'estrategia' } })
+  return analise
+}
+
 export async function analisarAudiencia() {
   const fas = await prisma.bondFa.findMany({
     orderBy: [{ totalLikes: 'desc' }, { totalComents: 'desc' }],
@@ -809,7 +860,7 @@ export async function chatComBond(
 
   const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY ?? '')
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.0-flash',
+    model: 'gemini-2.5-flash',
     systemInstruction: `Você é Bond, o agente de redes sociais de um deputado estadual brasileiro.
 
 DADOS ATUAIS DAS REDES SOCIAIS DO DEPUTADO:
