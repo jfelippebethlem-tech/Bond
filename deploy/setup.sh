@@ -55,7 +55,7 @@ pm2 save
 pm2 startup | tail -1 | sudo bash
 
 # 9. Copia config Nginx
-sudo cp deploy/nginx.conf /etc/nginx/sites-available/politimonitor
+sed "s@__APP_DIR__@$(pwd)@g" deploy/nginx.conf | sudo tee /etc/nginx/sites-available/politimonitor >/dev/null
 sudo ln -sf /etc/nginx/sites-available/politimonitor /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 sudo nginx -t && sudo systemctl reload nginx
