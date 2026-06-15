@@ -45,8 +45,9 @@ fi
 npm ci
 npm run build
 
-# 7. Configura PM2 ecosystem
+# 7. Configura PM2 ecosystem (artefato autônomo — caminhos via __dirname)
 cp deploy/ecosystem.config.js ./ecosystem.config.js
+mkdir -p logs
 
 # 8. Inicia com PM2
 pm2 start ecosystem.config.js

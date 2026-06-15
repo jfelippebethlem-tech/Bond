@@ -22,6 +22,11 @@ prisma/dev.db-wal
 # WhatsApp (Baileys) — credenciais da sessão, NUNCA commitar
 .whatsapp-auth/
 
+# PM2 logs (gerados em runtime dentro do projeto)
+logs/
+# cópia gerada na raiz por setup.sh/update.sh (a fonte fica em deploy/)
+/ecosystem.config.js
+
 # typescript
 tsconfig.tsbuildinfo
 *.tsbuildinfo
