@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guia — Token do Facebook/Instagram (Bond)</title>
+<style>
+  :root{--azul:#1b3a6b;--azul2:#2563eb;--verde:#15803d;--vermelho:#b91c1c;--cinza:#f4f5f7;--borda:#e2e5ea;}
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.6;color:#1a1d23;
+       margin:0;padding:0;background:#fff;}
+  .capa{background:linear-gradient(135deg,var(--azul),var(--azul2));color:#fff;padding:28px 22px;}
+  .capa h1{margin:0 0 6px;font-size:1.45rem;}
+  .capa p{margin:0;opacity:.92;font-size:.95rem;}
+  .wrap{max-width:780px;margin:0 auto;padding:18px 18px 60px;}
+  h2{color:var(--azul);border-bottom:2px solid var(--borda);padding-bottom:6px;margin-top:34px;font-size:1.2rem;}
+  .passo{background:var(--cinza);border:1px solid var(--borda);border-left:5px solid var(--azul2);
+         border-radius:10px;padding:14px 16px;margin:14px 0;}
+  .passo .n{display:inline-block;background:var(--azul2);color:#fff;font-weight:700;border-radius:50%;
+            width:26px;height:26px;text-align:center;line-height:26px;margin-right:8px;font-size:.85rem;}
+  .tela{font-size:.86rem;color:#475063;background:#fff;border:1px dashed var(--borda);border-radius:8px;
+        padding:8px 10px;margin-top:8px;}
+  .tela b{color:var(--azul);}
+  code{background:#eef1f6;padding:2px 6px;border-radius:5px;font-size:.86em;color:#9333ea;word-break:break-all;}
+  .alerta{background:#fef2f2;border:1px solid #fecaca;border-left:5px solid var(--vermelho);color:#7f1d1d;
+          border-radius:10px;padding:12px 16px;margin:16px 0;}
+  .ok{background:#f0fdf4;border:1px solid #bbf7d0;border-left:5px solid var(--verde);color:#14532d;
+      border-radius:10px;padding:12px 16px;margin:16px 0;}
+  .perm{background:#fff;border:1px solid var(--borda);border-radius:8px;padding:6px 10px;margin:4px 0;
+        font-family:ui-monospace,monospace;font-size:.85rem;display:flex;align-items:center;}
+  .perm::before{content:"☑";color:var(--verde);margin-right:8px;font-size:1rem;}
+  .rodape{text-align:center;color:#9aa1ad;font-size:.8rem;margin-top:40px;}
+  ul{margin:6px 0 0 0;padding-left:20px;}
+</style>
+</head>
+<body>
+<div class="capa">
+  <h1>🔑 Como gerar o token certo do Facebook/Instagram</h1>
+  <p>Guia tela a tela — para o Bond (PolitiMonitor) enxergar suas redes. ~15 min.</p>
+</div>
+<div class="wrap">
+
+  <div class="alerta">
+    <b>🛑 REGRA DE OURO:</b> use <b>UM app só</b>. <u>Nunca</u> clique "Criar app" de novo — foi isso que gerou os
+    duplicados ("JFN Monitor e Ideia"). Escolha um app existente e faça tudo nele.
+  </div>
+
+  <h2>Antes de começar — pré-requisitos</h2>
+  <ul>
+    <li>Uma <b>Página do Facebook</b> do mandato (você já tem ✅).</li>
+    <li>Um <b>Instagram Profissional (Business/Creator)</b> vinculado a essa Página (Parte 1 abaixo).</li>
+    <li>Estar logado com a conta que <b>administra</b> a Página.</li>
+  </ul>
+
+  <h2>Parte 1 — Deixar o Instagram Business e vincular à Página</h2>
+  <div class="passo"><span class="n">1</span><b>No celular, abra o Instagram</b> → toque na sua foto (canto inferior direito) → ícone ☰ (três linhas) → <b>Configurações e privacidade</b>.
+    <div class="tela">Tela: seu perfil do Instagram, menu lateral aberto.</div></div>
+  <div class="passo"><span class="n">2</span>Toque em <b>"Tipo de conta e ferramentas"</b> → <b>"Mudar para conta profissional"</b> → escolha <b>"Empresa"</b>.
+    <div class="tela">Se já for profissional, pule. Tela: "Conta profissional".</div></div>
+  <div class="passo"><span class="n">3</span>Quando perguntar, <b>vincule à sua Página do Facebook</b> (selecione a Página do mandato na lista).
+    <div class="tela">Tela: "Conectar à Página do Facebook" → escolha a Página.</div></div>
+  <div class="ok">✅ Pronto a Parte 1: agora o Instagram Business está ligado à Página. Sem isso, nenhum token mostra o IG.</div>
+
+  <h2>Parte 2 — Escolher UM app e ativar os produtos</h2>
+  <div class="passo"><span class="n">4</span>No computador, acesse <b>developers.facebook.com</b> e faça login.
+    <div class="tela">Tela: painel "Meta for Developers".</div></div>
+  <div class="passo"><span class="n">5</span>Clique em <b>"Meus Apps"</b> (topo direito). <b>Escolha UM app</b> da lista (ex.: "Conheça!").
+    <span style="color:var(--vermelho)"><b>NÃO clique "Criar app".</b></span>
+    <div class="tela">Tela: lista dos seus apps. Toque no app escolhido para abrir o painel dele.</div></div>
+  <div class="passo"><span class="n">6</span>No menu lateral esquerdo, em <b>"Adicionar produto"</b>, ative: <b>Instagram</b> (Graph API) e <b>Login do Facebook</b> (clique "Configurar" em cada um).
+    <div class="tela">Tela: cards de produtos. Procure "Instagram" e "Login do Facebook".</div></div>
+
+  <h2>Parte 3 — Gerar o token COM as permissões certas</h2>
+  <div class="alerta">⚠️ O botão "Gerar token" sozinho sai só com <code>public_profile</code> (não vê nada). Você <b>precisa marcar as permissões ANTES</b>.</div>
+  <div class="passo"><span class="n">7</span>No menu superior, vá em <b>Ferramentas → Explorador da Graph API</b> (developers.facebook.com/tools/explorer).
+    <div class="tela">Tela: "Graph API Explorer", com um seletor de app à direita.</div></div>
+  <div class="passo"><span class="n">8</span>No alto à direita, em <b>"Aplicativo Meta"</b>, selecione o <b>mesmo app</b> da Parte 2.
+    <div class="tela">Confirme que é o app certo (não um duplicado).</div></div>
+  <div class="passo"><span class="n">9</span>Logo abaixo, clique em <b>"Permissões"</b> (ou "Add Permissions") e <b>marque uma a uma</b>:
+    <div class="perm">pages_show_list</div>
+    <div class="perm">pages_read_engagement</div>
+    <div class="perm">pages_read_user_content</div>
+    <div class="perm">pages_manage_metadata</div>
+    <div class="perm">instagram_basic</div>
+    <div class="perm">instagram_manage_comments</div>
+    <div class="perm">instagram_manage_insights</div>
+    <div class="tela">Use a busca de permissões para achar cada uma. Todas marcadas ☑.</div></div>
+  <div class="passo"><span class="n">10</span>Clique em <b>"Gerar token de acesso"</b> → vai abrir um popup do Facebook → <b>faça login</b> → <b>selecione sua Página</b> e o <b>Instagram</b> → <b>conceda</b> todas as permissões.
+    <div class="tela">Tela: popup "Permitir que [App] acesse..." → marque tudo → Continuar.</div></div>
+
+  <h2>Parte 4 — Pegar o token da PÁGINA (o que o Bond usa)</h2>
+  <div class="passo"><span class="n">11</span>De volta ao Explorer, no campo de URL (ao lado de GET), apague tudo, digite <code>me/accounts</code> e clique em <b>"Enviar" (Submit)</b>.
+    <div class="tela">Tela: a resposta JSON aparece embaixo.</div></div>
+  <div class="passo"><span class="n">12</span>Na resposta, ache sua Página e copie o valor do campo <b><code>"access_token"</code></b> dela (começa com <code>EAA...</code> e é longo). <b>Esse</b> é o token da Página.
+    <div class="tela">Cada Página vem com seu próprio "access_token". Copie o da Página do mandato.</div></div>
+
+  <h2>Parte 5 — Me mandar</h2>
+  <div class="ok">
+    ✅ <b>Copie esse token da Página e me mande aqui no chat (em TEXTO, não foto).</b><br>
+    Eu coloco no sistema, reinicio o Bond e <b>valido na hora</b> — te digo exatamente o que ele passou a enxergar
+    (perfil, posts, comentários, seguidores).
+  </div>
+
+  <h2>Depois (opcional) — limpar os duplicados</h2>
+  <div class="passo"><span class="n">13</span>Para cada app duplicado que sobrou: abra ele → <b>Configurações → Avançado</b> → role até o fim → <b>"Excluir app"</b>. Mantenha só o que você configurou.</div>
+
+  <div class="rodape">Guia gerado para o PolitiMonitor / Bond · se travar em qualquer passo, manda um print no chat (o bot já recebe fotos).</div>
+</div>
+</body>
+</html>
