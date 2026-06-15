@@ -153,6 +153,14 @@ export default function InteracoesPage() {
         <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />
       </div>
 
+      {/* Nota de honestidade: limitação da API do Instagram p/ curtidas/compart. individuais */}
+      {(stats.like === 0 && stats.share === 0 && stats.comment > 0) && (
+        <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-5">
+          <Activity size={14} className="text-gray-400 mt-0.5 shrink-0" />
+          <span>No <b>Instagram</b>, a API só identifica <b>quem comentou</b> — a plataforma não revela <b>quem curtiu ou compartilhou</b> cada post (só o número total, visível na aba Posts). Curtidas/compartilhamentos por pessoa aparecem aqui quando o <b>Facebook</b> e o <b>Twitter/X</b> estiverem conectados.</span>
+        </div>
+      )}
+
       {/* Presets de data */}
       <div className="flex flex-wrap items-center gap-1.5 mb-3">
         {PRESETS.map(([k, l]) => (
