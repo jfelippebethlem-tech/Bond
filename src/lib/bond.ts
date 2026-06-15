@@ -22,8 +22,21 @@ REGRAS — SIGA TODAS SEM EXCEÇÃO:
 6. Seja direto e objetivo. Não repita o que foi pedido como introdução.`,
     generationConfig: { maxOutputTokens: maxTokens },
   })
-  const result = await model.generateContent(prompt)
-  return result.response.text() ?? ''
+  // Retry com backoff: o free tier do Gemini faz rate-limit (429/503) e às vezes
+  // devolve resposta curta/vazia — sem retry as análises saíam truncadas.
+  let ultimoErro = ''
+  for (let tent = 0; tent < 3; tent++) {
+    if (tent > 0) await new Promise((r) => setTimeout(r, 1800 * tent))
+    try {
+      const result = await model.generateContent(prompt)
+      const txt = (result.response.text() ?? '').trim()
+      if (txt.length > 40) return txt
+      ultimoErro = 'resposta vazia/curta'
+    } catch (e) {
+      ultimoErro = e instanceof Error ? e.message : String(e)
+    }
+  }
+  return `[IA temporariamente indisponível (${ultimoErro.slice(0, 70)}). Tente novamente em instantes.]`
 }
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
@@ -690,7 +703,7 @@ RESPONDA EXATAMENTE NESTE FORMATO (titulos em maiusculas, texto simples, sem ast
 - Acao 1: [especifica e mensuravel]
 - Acao 2: [especifica e mensuravel]
 - Acao 3: [especifica e mensuravel]
-- Acao 4: [especifica e mensuravel]`, 2200)
+- Acao 4: [especifica e mensuravel]`, 7000)
 
   await prisma.bondInsight.create({ data: { titulo: 'Analise Profunda de Viralizacao', descricao: analise, tipo: 'estrategia' } })
   return analise
