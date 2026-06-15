@@ -116,8 +116,8 @@ export default function InteracoesPage() {
   )
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-1">
+    <div className="p-4 md:p-6 max-w-6xl mx-auto">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
         <h1 className="text-2xl font-bold text-gray-900">Interações</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setAoVivo((v) => !v)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${aoVivo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
