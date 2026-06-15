@@ -39,7 +39,9 @@ export async function getInstagramPostInsights(mediaId: string) {
 }
 
 export async function getInstagramComments(mediaId: string) {
-  const res = await fetch(igUrl(`/${mediaId}/comments`, 'fields=id,username,text,timestamp&limit=100'))
+  // inclui as respostas (replies): o comments_count do post conta replies, mas /comments
+  // sozinho só traz os de topo — sem isso o monitor subconta (~23% a menos).
+  const res = await fetch(igUrl(`/${mediaId}/comments`, 'fields=id,username,text,timestamp,replies{id,username,text,timestamp}&limit=100'))
   if (!res.ok) return []
   const data = await res.json()
   return data.data ?? []
