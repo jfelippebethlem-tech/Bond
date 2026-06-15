@@ -1,3 +1,6 @@
+import fs from 'fs'
+import path from 'path'
+
 import TelegramBot from 'node-telegram-bot-api'
 import { PrismaClient } from '@prisma/client'
 
@@ -111,8 +114,24 @@ const isOwner = (msg: TelegramBot.Message) =>
   OWNER_ID !== '' && String(msg.from?.id ?? '') === OWNER_ID
 
 bot.on('message', async (msg) => {
-  if (!msg.text) return
   const chatId = String(msg.chat.id)
+
+  // Foto do dono → baixa p/ o assistente poder analisar (salva em data/telegram_fotos/)
+  if (msg.photo && isOwner(msg)) {
+    try {
+      const ph = msg.photo[msg.photo.length - 1] // maior resolução
+      const dir = path.join(process.cwd(), 'data', 'telegram_fotos')
+      fs.mkdirSync(dir, { recursive: true })
+      const fpath = await bot.downloadFile(ph.file_id, dir)
+      console.log(`[FOTO do dono] ${fpath} | legenda: ${msg.caption ?? '(sem)'}`)
+      await bot.sendMessage(chatId, '📷 Foto recebida — vou analisar.')
+    } catch (err) {
+      console.error('Erro ao baixar foto:', err)
+    }
+    return
+  }
+
+  if (!msg.text) return
   const text = msg.text.trim()
 
   // ── Comandos de admin (só o dono): ensinam/operam o app ──
