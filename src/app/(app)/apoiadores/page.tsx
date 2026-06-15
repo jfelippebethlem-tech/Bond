@@ -6,6 +6,7 @@ import {
   Heart, MessageCircle, Share2, Trophy, Loader2, X, Check,
   FileSpreadsheet, AlertCircle, ChevronDown, Phone, Star,
 } from 'lucide-react'
+import { getNivel, getBadges, getProgressoNivel } from '@/lib/gamificacao'
 
 type BondFaInfo = { id: string; plataforma: string; totalLikes: number; totalComents: number; totalShares: number }
 type Cabo = {
@@ -354,6 +355,14 @@ export default function CabosPage() {
               const totalLikes = cabo.bondFas.reduce((s, f) => s + f.totalLikes, 0)
               const totalComents = cabo.bondFas.reduce((s, f) => s + f.totalComents, 0)
               const totalShares = cabo.bondFas.reduce((s, f) => s + f.totalShares, 0)
+              const nivel = getNivel(cabo.score)
+              const progresso = getProgressoNivel(cabo.score)
+              const badges = getBadges({
+                totalLikes, totalComents, totalShares,
+                score: cabo.score,
+                plataformasVinculadas: cabo.plataformasVinculadas,
+                posicaoRanking: i + 1,
+              })
 
               return (
                 <div
@@ -361,7 +370,7 @@ export default function CabosPage() {
                   className="grid grid-cols-[2fr_1fr_auto_auto] items-center gap-4 px-4 py-3 hover:bg-gray-50 rounded-lg cursor-pointer group"
                   onClick={() => editarCabo(cabo)}
                 >
-                  {/* Nome + tipo + posição */}
+                  {/* Nome + tipo + posição + gamificação */}
                   <div className="flex items-center gap-3">
                     <div className="w-7 flex justify-center shrink-0">
                       {i < 3 ? (
@@ -370,19 +379,18 @@ export default function CabosPage() {
                         <span className="text-xs text-gray-300 font-medium">{i + 1}</span>
                       )}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-sm font-medium text-gray-900">{cabo.nome}</p>
                         <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${TIPO_COLOR[cabo.tipo] ?? 'bg-gray-100 text-gray-600'}`}>
                           {TIPO_LABEL[cabo.tipo] ?? cabo.tipo}
                         </span>
-                        {cabo.plataformasVinculadas.length > 0 && (
-                          <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
-                            <Star className="w-2.5 h-2.5" />ativo
-                          </span>
-                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${nivel.bg.replace('bg-', 'bg-').replace('900', '100')} ${nivel.cor.replace('text-', 'text-').replace('400', '700')}`}
+                          title={`Nível ${nivel.nivel}: ${nivel.nome} — ${progresso}% para o próximo`}>
+                          Nv.{nivel.nivel} {nivel.nome}
+                        </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                         {cabo.cargo && <span className="text-xs text-gray-400">{cabo.cargo}</span>}
                         {cabo.telefone && (
                           <span className="flex items-center gap-0.5 text-xs text-gray-300">
@@ -390,6 +398,23 @@ export default function CabosPage() {
                           </span>
                         )}
                       </div>
+                      {/* Badges */}
+                      {badges.length > 0 && (
+                        <div className="flex gap-0.5 mt-1 flex-wrap">
+                          {badges.map(b => (
+                            <span key={b.id} title={`${b.nome}: ${b.descricao}`} className="text-sm cursor-help">{b.emoji}</span>
+                          ))}
+                        </div>
+                      )}
+                      {/* Barra de progresso do nível */}
+                      {cabo.score > 0 && nivel.nivel < 5 && (
+                        <div className="w-full max-w-[120px] h-1 bg-gray-200 rounded-full mt-1 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full transition-all"
+                            style={{ width: `${progresso}%` }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -440,7 +465,7 @@ export default function CabosPage() {
                   {/* Score + ações */}
                   <div className="flex items-center gap-2 shrink-0">
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${cabo.score > 0 ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-400'}`}>
-                      {cabo.score}
+                      {cabo.score} pts
                     </span>
                     <button
                       onClick={e => { e.stopPropagation(); handleDelete(cabo.id) }}
@@ -455,12 +480,35 @@ export default function CabosPage() {
         </div>
       )}
 
-      {/* Legenda */}
+      {/* Legenda + Níveis */}
       {filtrados.length > 0 && (
-        <div className="mt-4 flex items-center gap-4 text-xs text-gray-400 px-4">
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-400 rounded-full" />Vinculado ao Bond (rastreia interações)</span>
-          <span>Score = ❤×1 + 💬×2 + 🔁×3</span>
-          <span className="flex items-center gap-1"><Trophy className="w-3 h-3 text-yellow-500" />Ordenado por score</span>
+        <div className="mt-4 space-y-2 px-4">
+          <div className="flex items-center gap-4 text-xs text-gray-400">
+            <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 bg-green-400 rounded-full" />Vinculado ao Bond</span>
+            <span>Score = ❤×1 + 💬×2 + 🔁×3</span>
+            <span className="flex items-center gap-1"><Trophy className="w-3 h-3 text-yellow-500" />Ordenado por score</span>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className="text-gray-400 mr-1">Níveis:</span>
+            {[
+              { n: 0, label: 'Observador', range: '0–49' },
+              { n: 1, label: 'Apoiador Ativo', range: '50–199' },
+              { n: 2, label: 'Militante', range: '200–499' },
+              { n: 3, label: 'Ativista', range: '500–999' },
+              { n: 4, label: 'Líder', range: '1k–2.4k' },
+              { n: 5, label: 'Referência', range: '2.5k+' },
+            ].map(({ n, label, range }) => (
+              <span key={n} className="text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded-full">
+                Nv.{n} {label} <span className="opacity-60">({range} pts)</span>
+              </span>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-1 text-xs text-gray-400">
+            <span className="mr-1">Badges:</span>
+            {[['🌟','1º passo'],['❤️','10+ curtidas'],['💬','5+ coment.'],['🔄','3+ shares'],['📣','10+ shares'],['🎯','tudo'],['🌐','multi-plat.'],['⭐','500+ pts'],['🥇🥈🥉','top 3']].map(([e, d]) => (
+              <span key={e} className="opacity-70">{e} {d}</span>
+            ))}
+          </div>
         </div>
       )}
     </div>
