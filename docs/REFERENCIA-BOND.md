@@ -27,8 +27,9 @@ Stack: **Next.js 14** (React/Tailwind) + **Prisma (SQLite)** + agentes de IA. Na
 - **DB:** `prisma/prod.db` (SQLite, `db push` aplicado, todas as tabelas criadas).
 - **Build:** `npm run build` OK (prisma generate + next build). `npm install` = 427 pacotes.
 - **`.env`** (`~/polimonitor/.env`, chmod 600, gitignored): `AUTH_SECRET` (gerado), `ADMIN_PASSWORD` (TEMP — trocar),
-  `GEMINI_API_KEY` + `OPENROUTER_API_KEY` (reusadas do JFN), `DEPUTY_STATE=RJ`. **Telegram VAZIO de propósito**
-  (não usar o token do Yoda → evita conflito 409 de 2 pollers). `DATABASE_URL="file:./prod.db"`.
+  `GEMINI_API_KEY` + `OPENROUTER_API_KEY` (reusadas do JFN), `DEPUTY_NAME="Jorge Felippe Neto"` / `DEPUTY_PARTY=PL` /
+  `DEPUTY_STATE=RJ`, `TELEGRAM_BOT_TOKEN` = **@BondCampanhaBot** (bot PRÓPRIO do dono, NÃO o do Yoda → sem conflito 409).
+  `DATABASE_URL="file:./prod.db"`.
 
 ## 3. COMO OPERAR
 ```bash
@@ -43,14 +44,13 @@ Logs ficam em `~/polimonitor/logs/`. Config pm2 = `~/polimonitor/ecosystem.confi
 fork p/ VM-safe; o original `deploy/ecosystem.config.js` mantém 2 cluster p/ máquinas maiores).
 
 ## 4. ⚠️ O QUE DEPENDE DO DONO (itens humanos)
-1. **Senha admin:** `.env` tem `ADMIN_PASSWORD` TEMPORÁRIA (enviada no Telegram) — **trocar** por uma sua.
-2. **Identidade:** `DEPUTY_NAME` / `DEPUTY_PARTY` estão "A DEFINIR" no `.env` — preencher.
+1. **Senha admin:** `.env` tem `ADMIN_PASSWORD` TEMPORÁRIA (enviada no Telegram) — **trocar** por uma sua. ⏳ PENDENTE
+2. ~~**Identidade:** `DEPUTY_NAME`/`DEPUTY_PARTY`~~ ✅ **FEITO** (Jorge Felippe Neto / PL / RJ — 06-15).
 3. **WhatsApp (QR):** abrir `/whatsapp` no painel (logado) e **escanear o QR** com o celular → conecta a sessão
-   (salva em `.whatsapp-auth`, gitignored). Sem isso o worker WhatsApp fica aguardando.
+   (salva em `.whatsapp-auth`, gitignored). Sem isso o worker WhatsApp fica aguardando. ⏳ PENDENTE
 4. **Redes (opcional, p/ o Bond):** `TWITTER_BEARER_TOKEN`/`TWITTER_USERNAME` (developer.twitter.com) e
    `FACEBOOK_PAGE_TOKEN` (developers.facebook.com, Página + Instagram Business). Sem eles o Bond roda mas sem dados.
-5. **Telegram próprio (opcional):** se quiser o bot do PolitiMonitor, criar um **2º bot** no BotFather (NÃO o do Yoda)
-   e pôr o token no `.env`.
+5. ~~**Telegram próprio:**~~ ✅ **FEITO** (token do **@BondCampanhaBot** no `.env`; bot separado do Yoda — 06-15).
 6. **Acesso público (opcional):** liberar a porta 3000 (ou 80 via nginx) na **Security List da Oracle** se quiser
    acesso fora da Tailscale. O `deploy/setup.sh` configura nginx (path já auto-detectado — fix `892f6bc`).
 7. **Repo próprio (ideal):** migrar de branch do JFN para um repositório dedicado.
