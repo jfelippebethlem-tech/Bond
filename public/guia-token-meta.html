@@ -80,13 +80,14 @@
     <div class="perm">pages_show_list</div>
     <div class="perm">pages_read_engagement</div>
     <div class="perm">pages_read_user_content</div>
-    <div class="perm">pages_manage_metadata</div>
+    <div class="perm">business_management ← essencial (Página de Business Manager)</div>
     <div class="perm">instagram_basic</div>
     <div class="perm">instagram_manage_comments</div>
     <div class="perm">instagram_manage_insights</div>
-    <div class="tela">Use a busca de permissões para achar cada uma. Todas marcadas ☑.</div></div>
-  <div class="passo"><span class="n">10</span>Clique em <b>"Gerar token de acesso"</b> → vai abrir um popup do Facebook → <b>faça login</b> → <b>selecione sua Página</b> e o <b>Instagram</b> → <b>conceda</b> todas as permissões.
-    <div class="tela">Tela: popup "Permitir que [App] acesse..." → marque tudo → Continuar.</div></div>
+    <div class="tela">Use a busca de permissões para achar cada uma. Todas marcadas ☑. Sem <b>business_management</b> a Página NÃO aparece.</div></div>
+  <div class="alerta">🛑 No popup do Facebook tem uma tela <b>"Quais Páginas você quer usar?"</b> — você PRECISA <b>marcar a caixa da Página do mandato</b> ali. Se passar direto sem marcar, o token volta com 0 páginas (foi o que aconteceu).</div>
+  <div class="passo"><span class="n">10</span>Clique em <b>"Gerar token de acesso"</b> → popup do Facebook → <b>faça login</b> → na tela de Páginas, <b>MARQUE a Página</b> do mandato → <b>selecione o Instagram</b> → <b>conceda</b> todas as permissões.
+    <div class="tela">Tela: "O que você quer permitir?" → Páginas → ☑ marque a sua Página → Continuar.</div></div>
 
   <h2>Parte 4 — Copiar o token e colar no bot (o resto é automático)</h2>
   <div class="passo"><span class="n">11</span>Logo abaixo do botão aparece o campo <b>"Token de acesso"</b> com um texto longo começando com <code>EAA...</code>. Clique nele e <b>copie tudo</b>.
