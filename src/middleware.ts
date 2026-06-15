@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/auth'
 
-// /guia-* são páginas de instrução (sem dado sensível) — abertas sem login p/ o dono acessar fácil.
-const publicPaths = ['/login', '/api/auth/login', '/guia-']
+// /guia-*, /privacidade, /termos são páginas públicas (instrução/legais, sem dado sensível) —
+// abertas sem login. Privacidade/Termos são exigidas pelo Facebook Login (URLs públicas).
+const publicPaths = ['/login', '/api/auth/login', '/guia-', '/privacidade', '/termos']
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
