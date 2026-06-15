@@ -14,6 +14,20 @@ export async function getFacebookPageInfo() {
   return res.json()
 }
 
+// Status do token (p/ o monitor avisar quando os dados estão stale)
+export async function checkFacebookToken(): Promise<{ status: 'valid' | 'expired' | 'none' | 'error'; detail?: string }> {
+  if (!process.env.FACEBOOK_PAGE_TOKEN) return { status: 'none' }
+  try {
+    const res = await fetch(fbUrl('/me', 'fields=name'))
+    if (res.ok) return { status: 'valid' }
+    const data = await res.json().catch(() => ({}))
+    const code = data?.error?.code
+    return { status: code === 190 ? 'expired' : 'error', detail: data?.error?.message }
+  } catch (e) {
+    return { status: 'error', detail: e instanceof Error ? e.message : String(e) }
+  }
+}
+
 export async function getFacebookPosts(limit = 20) {
   if (!process.env.FACEBOOK_PAGE_TOKEN) return []
   const base = 'id,message,story,created_time,full_picture,permalink_url,likes.summary(true),shares'

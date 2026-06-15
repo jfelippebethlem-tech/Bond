@@ -51,8 +51,11 @@ export default function InteracoesPage() {
   const [loading, setLoading] = useState(false)
   const [aoVivo, setAoVivo] = useState(false)
   const [sincronizando, setSync] = useState(false)
+  const [token, setToken] = useState<{ facebook?: { status: string; detail?: string }; ultimaSync?: string | null } | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | null>(null)
   const anoAtual = new Date().getFullYear()
+
+  useEffect(() => { fetch('/api/bond?tipo=token_status').then((r) => r.json()).then(setToken).catch(() => {}) }, [])
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -114,6 +117,18 @@ export default function InteracoesPage() {
         </div>
       </div>
       <p className="text-gray-500 text-sm mb-4">Quem curtiu, comentou e compartilhou — monitorado por data, rede e pessoa.</p>
+
+      {token && token.facebook?.status !== 'valid' && (
+        <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <span className="text-base leading-none">⚠️</span>
+          <span><b>Token do Facebook/Instagram {token.facebook?.status === 'expired' ? 'EXPIRADO' : token.facebook?.status === 'none' ? 'não configurado' : 'com erro'}.</b> Os dados podem estar desatualizados{token.ultimaSync ? ` (último sync: ${new Date(token.ultimaSync).toLocaleString('pt-BR')})` : ''}. Gere um token novo no Graph API Explorer e envie para reconectar — os dados voltam a ser ao vivo.</span>
+        </div>
+      )}
+      {token && token.facebook?.status === 'valid' && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-green-200 bg-green-50 px-4 py-2 text-xs text-green-700">
+          <Radio size={13} /> <span>Conectado ao Facebook/Instagram — dados ao vivo{token.ultimaSync ? ` · último sync ${new Date(token.ultimaSync).toLocaleString('pt-BR')}` : ''}.</span>
+        </div>
+      )}
 
       {/* Cards de totais */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">

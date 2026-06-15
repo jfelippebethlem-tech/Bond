@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { checkFacebookToken } from '@/lib/social/facebook'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
   gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia, analiseProfunda,
@@ -62,6 +63,14 @@ export async function GET(req: NextRequest) {
       orderBy: { criadoEm: 'desc' },
     })
     return NextResponse.json(rascunhos)
+  }
+
+  if (tipo === 'token_status') {
+    const [fb, perfil] = await Promise.all([
+      checkFacebookToken(),
+      prisma.bondPerfil.findFirst({ where: { plataforma: 'instagram' }, orderBy: { ultimaSync: 'desc' }, select: { ultimaSync: true } }),
+    ])
+    return NextResponse.json({ facebook: fb, ultimaSync: perfil?.ultimaSync ?? null })
   }
 
   if (tipo === 'interacoes') {
