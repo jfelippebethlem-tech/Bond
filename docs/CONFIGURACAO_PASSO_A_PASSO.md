@@ -112,17 +112,23 @@ do Facebook.**
 
 ### Passo a passo
 1. Acesse https://developers.facebook.com e faça login
-2. **"Meus Apps" → "Criar app"** → tipo **"Empresa/Business"** → dê um nome
-3. No painel do app, adicione o produto **"Instagram Graph API"** e
-   **"Facebook Login"**
+2. **"Meus Apps"** → ⚠️ **REUSE um app que já existe — NÃO crie um novo.**
+   Só clique **"Criar app"** (tipo **"Empresa/Business"**, nome único) se você **não tiver NENHUM** app.
+   > 🛑 **NUNCA clique "Criar app" a cada tentativa.** Isso gera apps duplicados (ex.: vários "JFN Monitor e Ideia").
+   > Escolha **UM** app e faça TUDO sempre nele. Se já criou duplicados, apague os extras depois
+   > (cada um → *Configurações → Avançado → Excluir app*).
+3. **Nesse mesmo app**, adicione os produtos **"Instagram Graph API"** e **"Facebook Login"**
 4. Vá em **Ferramentas → Explorador da Graph API**
    (https://developers.facebook.com/tools/explorer/)
 5. No seletor, escolha seu app; clique em **"Gerar token de acesso"**
-6. Marque estas permissões (scopes):
+6. **Add Permissions / Marque estas permissões (scopes) ANTES de gerar** (o botão "Gerar" sozinho sai só com
+   `public_profile` — aí o Bond não vê nada):
    - `pages_show_list`
    - `pages_read_engagement`
    - `pages_read_user_content`
+   - `pages_manage_metadata`
    - `instagram_basic`
+   - `instagram_manage_comments`
    - `instagram_manage_insights`
    - `read_insights`
 7. Gere o token e **autorize** com a conta que administra a Página
