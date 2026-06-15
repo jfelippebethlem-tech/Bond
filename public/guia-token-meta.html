@@ -88,17 +88,16 @@
   <div class="passo"><span class="n">10</span>Clique em <b>"Gerar token de acesso"</b> → vai abrir um popup do Facebook → <b>faça login</b> → <b>selecione sua Página</b> e o <b>Instagram</b> → <b>conceda</b> todas as permissões.
     <div class="tela">Tela: popup "Permitir que [App] acesse..." → marque tudo → Continuar.</div></div>
 
-  <h2>Parte 4 — Pegar o token da PÁGINA (o que o Bond usa)</h2>
-  <div class="passo"><span class="n">11</span>De volta ao Explorer, no campo de URL (ao lado de GET), apague tudo, digite <code>me/accounts</code> e clique em <b>"Enviar" (Submit)</b>.
-    <div class="tela">Tela: a resposta JSON aparece embaixo.</div></div>
-  <div class="passo"><span class="n">12</span>Na resposta, ache sua Página e copie o valor do campo <b><code>"access_token"</code></b> dela (começa com <code>EAA...</code> e é longo). <b>Esse</b> é o token da Página.
-    <div class="tela">Cada Página vem com seu próprio "access_token". Copie o da Página do mandato.</div></div>
+  <h2>Parte 4 — Copiar o token e colar no bot (o resto é automático)</h2>
+  <div class="passo"><span class="n">11</span>Logo abaixo do botão aparece o campo <b>"Token de acesso"</b> com um texto longo começando com <code>EAA...</code>. Clique nele e <b>copie tudo</b>.
+    <div class="tela">É o token de USUÁRIO — não precisa fazer <code>me/accounts</code> na mão, o bot faz isso sozinho.</div></div>
 
-  <h2>Parte 5 — Me mandar</h2>
+  <h2>Parte 5 — Colar no bot do Telegram</h2>
   <div class="ok">
-    ✅ <b>Copie esse token da Página e me mande aqui no chat (em TEXTO, não foto).</b><br>
-    Eu coloco no sistema, reinicio o Bond e <b>valido na hora</b> — te digo exatamente o que ele passou a enxergar
-    (perfil, posts, comentários, seguidores).
+    ✅ <b>Cole esse token aqui no chat do bot (em TEXTO, não foto).</b><br>
+    O bot automaticamente: troca por um token <b>de longa duração</b> → deriva o token da <b>Página</b>
+    (<b>PERMANENTE</b>, não expira mais) → descobre o Instagram vinculado → <b>salva</b> e <b>já sincroniza</b>.
+    Em seguida te confirma a Página, o @ do Instagram, se ficou permanente e quantos posts entraram.
   </div>
 
   <h2>Depois (opcional) — limpar os duplicados</h2>
