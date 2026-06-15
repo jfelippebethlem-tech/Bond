@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conectar Facebook/Instagram ao Bond — Passo a Passo</title>
+<style>
+  :root{
+    --azul:#1d4ed8; --azul-claro:#eff6ff; --verde:#15803d; --verde-claro:#f0fdf4;
+    --vermelho:#b91c1c; --vermelho-claro:#fef2f2; --amarelo:#a16207; --amarelo-claro:#fffbeb;
+    --cinza:#475569; --cinza-claro:#f8fafc; --borda:#e2e8f0; --tinta:#0f172a;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    color:var(--tinta); background:#f1f5f9; line-height:1.55; -webkit-text-size-adjust:100%;
+  }
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px 64px}
+  /* capa */
+  .capa{
+    background:linear-gradient(135deg,#0f172a,#1e3a8a); color:#fff;
+    padding:36px 24px 30px; border-radius:0 0 20px 20px; margin:0 -16px 28px;
+  }
+  .capa .tag{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:#93c5fd; font-weight:600}
+  .capa h1{margin:8px 0 6px; font-size:26px; line-height:1.2}
+  .capa p{margin:0; color:#cbd5e1; font-size:15px}
+  .capa .tempo{display:inline-block; margin-top:14px; background:rgba(255,255,255,.12); padding:5px 12px; border-radius:999px; font-size:13px}
+  /* objetivo */
+  .objetivo{
+    background:var(--azul-claro); border:1px solid #bfdbfe; border-radius:14px;
+    padding:16px 18px; margin-bottom:26px; font-size:15px;
+  }
+  .objetivo b{color:var(--azul)}
+  h2{font-size:19px; margin:30px 0 14px; padding-bottom:8px; border-bottom:2px solid var(--borda)}
+  /* passos */
+  .passo{display:flex; gap:14px; margin:0 0 16px; align-items:flex-start}
+  .num{
+    flex:0 0 32px; width:32px; height:32px; border-radius:50%; background:var(--azul); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:700; font-size:15px; margin-top:1px;
+  }
+  .passo .corpo{flex:1; min-width:0}
+  .passo .corpo b{color:var(--tinta)}
+  .dica{font-size:13.5px; color:var(--cinza); background:var(--cinza-claro); border-left:3px solid #cbd5e1; padding:7px 12px; border-radius:0 8px 8px 0; margin-top:7px}
+  /* permissões */
+  .perms{background:#0f172a; color:#e2e8f0; border-radius:12px; padding:16px 18px; margin:12px 0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:14px}
+  .perms .p{padding:5px 0; border-bottom:1px solid #1e293b; display:flex; align-items:center; gap:8px}
+  .perms .p:last-child{border-bottom:0}
+  .perms .p .ok{color:#4ade80}
+  .perms .essencial{color:#fbbf24; font-size:12px; margin-left:auto}
+  /* callouts */
+  .box{border-radius:14px; padding:16px 18px; margin:18px 0; font-size:15px}
+  .box .titulo{font-weight:700; display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:15px}
+  .faca{background:var(--verde-claro); border:1px solid #bbf7d0}
+  .faca .titulo{color:var(--verde)}
+  .naofaca{background:var(--vermelho-claro); border:1px solid #fecaca}
+  .naofaca .titulo{color:var(--vermelho)}
+  .atencao{background:var(--amarelo-claro); border:1px solid #fde68a}
+  .atencao .titulo{color:var(--amarelo)}
+  .lista{margin:8px 0 0; padding:0; list-style:none}
+  .lista li{padding:5px 0 5px 26px; position:relative; font-size:14.5px}
+  .lista.sim li::before{content:"✓"; position:absolute; left:0; color:var(--verde); font-weight:700}
+  .lista.nao li::before{content:"✕"; position:absolute; left:0; color:var(--vermelho); font-weight:700}
+  /* destaque crítico */
+  .critico{
+    background:#fff; border:2px solid var(--vermelho); border-radius:14px; padding:18px; margin:22px 0;
+    box-shadow:0 4px 16px rgba(185,28,28,.08);
+  }
+  .critico .selo{display:inline-block; background:var(--vermelho); color:#fff; font-size:12px; font-weight:700; padding:3px 10px; border-radius:999px; letter-spacing:.04em}
+  .critico h3{margin:10px 0 6px; font-size:17px; color:var(--vermelho)}
+  .critico p{margin:0; font-size:15px}
+  /* resultado */
+  .resultado{background:var(--verde-claro); border:1px solid #bbf7d0; border-radius:14px; padding:18px}
+  .resultado ol{margin:10px 0 0; padding-left:20px}
+  .resultado li{margin:5px 0; font-size:14.5px}
+  .rodape{text-align:center; color:#94a3b8; font-size:13px; margin-top:34px; padding-top:18px; border-top:1px solid var(--borda)}
+  code{background:#e2e8f0; padding:1px 6px; border-radius:5px; font-size:.92em; font-family:ui-monospace,monospace}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="capa">
+    <div class="tag">PolitiMonitor · Bond</div>
+    <h1>Conectar Facebook + Instagram</h1>
+    <p>Gerar o token do jeito certo — e nunca mais expirar.</p>
+    <span class="tempo">⏱️ ~3 minutos · faça no computador</span>
+  </div>
+
+  <div class="objetivo">
+    🎯 <b>Objetivo:</b> gerar <b>um</b> token de acesso com as permissões certas e
+    <b>concedendo a Página</b> do mandato. Quando você colar esse token no bot, ele vira
+    <b>permanente</b> (nunca mais expira) e o monitor passa a ler tudo ao vivo — inclusive
+    <b>quem curtiu</b> no Facebook.
+  </div>
+
+  <!-- ERROS JÁ COMETIDOS -->
+  <div class="box naofaca">
+    <div class="titulo">🚫 O que JÁ deu errado (não repita)</div>
+    <ul class="lista nao">
+      <li>Colar de novo o <b>mesmo token</b> antigo — ele não muda, continua com 0 páginas.</li>
+      <li>Clicar em <b>Generate</b> sem marcar permissões → sai só <code>public_profile</code> (não vê nada).</li>
+      <li>Faltar a permissão <b>business_management</b> → a Página <b>não aparece</b> e volta 0 páginas.</li>
+      <li>Passar direto no popup <b>sem marcar a caixa da Página</b> do mandato.</li>
+    </ul>
+  </div>
+
+  <h2>Passo a passo (faça assim)</h2>
+
+  <div class="passo"><div class="num">1</div><div class="corpo">
+    Abra no computador: <b>developers.facebook.com/tools/explorer</b>
+    <div class="dica">É o "Graph API Explorer". Faça login com a conta que administra a Página.</div>
+  </div></div>
+
+  <div class="passo"><div class="num">2</div><div class="corpo">
+    No alto à direita, em <b>"Meta App"</b>, selecione <b>JFN Monitor e Ideia</b>.
+    <div class="dica">🛑 Não crie um app novo — use exatamente esse.</div>
+  </div></div>
+
+  <div class="passo"><div class="num">3</div><div class="corpo">
+    Clique em <b>"Add a Permission" / "Permissões"</b> e marque <b>TODAS estas 6</b>
+    (use a busca para achar uma por uma):
+    <div class="perms">
+      <div class="p"><span class="ok">☑</span> pages_show_list</div>
+      <div class="p"><span class="ok">☑</span> pages_read_engagement</div>
+      <div class="p"><span class="ok">☑</span> pages_read_user_content</div>
+      <div class="p"><span class="ok">☑</span> business_management <span class="essencial">← ESSENCIAL</span></div>
+      <div class="p"><span class="ok">☑</span> instagram_basic</div>
+      <div class="p"><span class="ok">☑</span> instagram_manage_comments</div>
+    </div>
+  </div></div>
+
+  <div class="passo"><div class="num">4</div><div class="corpo">
+    Clique em <b>"Generate Access Token"</b>. Vai abrir um <b>popup do Facebook</b>.
+  </div></div>
+
+  <!-- O PASSO CRÍTICO -->
+  <div class="critico">
+    <span class="selo">PASSO QUE SEMPRE TRAVA</span>
+    <h3>5. MARQUE a caixa da sua Página</h3>
+    <p>No popup vai aparecer uma tela <b>"Quais Páginas você quer usar?"</b> (ou
+    "O que você quer permitir?"). <b>Toque na caixinha da Página do mandato</b> para marcá-la
+    ✅ — e também o <b>Instagram</b>. Só depois clique em <b>Continuar</b>.</p>
+    <p style="margin-top:8px; color:var(--vermelho)"><b>Se passar direto sem marcar a Página, o token volta com 0 páginas e não funciona.</b> Foi isso que aconteceu nas tentativas anteriores.</p>
+  </div>
+
+  <div class="passo"><div class="num">6</div><div class="corpo">
+    Termine concedendo <b>todas</b> as permissões. Você volta ao Explorer.
+  </div></div>
+
+  <div class="passo"><div class="num">7</div><div class="corpo">
+    No campo <b>"Access Token"</b> aparece um texto longo começando com <code>EAA…</code>.
+    <b>Copie tudo.</b>
+    <div class="dica">Não precisa fazer <code>me/accounts</code> nem nada manual — o bot faz sozinho.</div>
+  </div></div>
+
+  <div class="passo"><div class="num">8</div><div class="corpo">
+    Abra o <b>bot do Bond no Telegram</b> e <b>cole o token</b> (em texto, não foto). Envie.
+  </div></div>
+
+  <!-- RESULTADO -->
+  <h2>O que acontece quando você colar</h2>
+  <div class="resultado">
+    <div style="font-weight:700; color:var(--verde)">✅ Automático, em segundos:</div>
+    <ol>
+      <li>Troca por token de <b>longa duração</b></li>
+      <li>Deriva o token da <b>Página</b> → <b>PERMANENTE</b> (não expira mais)</li>
+      <li>Acha o <b>Instagram</b> vinculado</li>
+      <li>Salva e <b>re-sincroniza</b> (Instagram + Facebook)</li>
+      <li>Te confirma: Página, @ do Instagram, "permanente: SIM" e nº de posts</li>
+    </ol>
+  </div>
+
+  <!-- SE A PÁGINA NÃO APARECER -->
+  <div class="box atencao">
+    <div class="titulo">⚠️ E se a Página NÃO aparecer pra marcar?</div>
+    Então o app ainda não está vinculado à Página no <b>Business Manager</b>. Nesse caso,
+    <b>tire um print</b> da tela e mande no bot — eu te guio a vincular em
+    <b>business.facebook.com → Configurações do Negócio → Páginas</b> (adicionar o app como
+    parceiro/usuário da Página). É rápido.
+  </div>
+
+  <div class="rodape">
+    Guia do PolitiMonitor / Bond · travou em algum passo? Manda um print no bot — ele recebe e analisa fotos. 📲
+  </div>
+
+</div>
+</body>
+</html>
