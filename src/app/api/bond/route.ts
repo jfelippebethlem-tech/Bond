@@ -8,6 +8,21 @@ import {
   buscarComentariosPendentes, sugerirResposta, aprovarResposta, rejeitarComentario,
 } from '@/lib/bond'
 
+// Monta um CSV (UTF-8 com BOM p/ o Excel abrir acentos certo) a partir de uma matriz.
+function csvResp(rows: (string | number)[][], nome: string) {
+  const esc = (v: string | number) => {
+    const s = String(v ?? '')
+    return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const csv = '﻿' + rows.map((r) => r.map(esc).join(';')).join('\r\n')
+  return new NextResponse(csv, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="${nome}-${new Date().toISOString().slice(0, 10)}.csv"`,
+    },
+  })
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const tipo = searchParams.get('tipo')
@@ -80,6 +95,7 @@ export async function GET(req: NextRequest) {
     const de = searchParams.get('de')
     const ate = searchParams.get('ate')
     const agrupar = searchParams.get('agrupar') // 'pessoa' | null
+    const formato = searchParams.get('formato') // 'csv' | null
     const dateW: { gte?: Date; lte?: Date } = {}
     if (de) dateW.gte = new Date(de + 'T00:00:00')
     if (ate) dateW.lte = new Date(ate + 'T23:59:59')
@@ -144,7 +160,17 @@ export async function GET(req: NextRequest) {
       const pessoas = Array.from(byP.values())
         .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
         .sort((a, b) => b.total - a.total)
+      if (formato === 'csv') {
+        const head = ['posicao', 'pessoa', 'total', 'comentarios', 'likes', 'shares', 'plataformas', 'posts_distintos', 'ultima_interacao']
+        const linhas = pessoas.map((p, i) => [i + 1, p.pessoa, p.total, p.comment, p.like, p.share, p.plataformas.join(' '), p.nPosts, new Date(p.ultima).toISOString()])
+        return csvResp([head, ...linhas], `ranking-interacoes`)
+      }
       return NextResponse.json({ stats, data: pessoas.slice(0, 2000) })
+    }
+    if (formato === 'csv') {
+      const head = ['data', 'pessoa', 'tipo', 'plataforma', 'post', 'texto']
+      const linhas = items.map((it) => [new Date(it.data).toISOString(), it.pessoa, it.tipo, it.plataforma, it.postId, it.texto ?? ''])
+      return csvResp([head, ...linhas], `interacoes`)
     }
     return NextResponse.json({ stats, data: items.slice(0, 500) })
   }
