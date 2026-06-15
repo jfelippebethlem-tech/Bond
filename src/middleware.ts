@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionFromRequest } from '@/lib/auth'
 
-const publicPaths = ['/login', '/api/auth/login']
+// /guia-* são páginas de instrução (sem dado sensível) — abertas sem login p/ o dono acessar fácil.
+const publicPaths = ['/login', '/api/auth/login', '/guia-']
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
