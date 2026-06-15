@@ -44,7 +44,7 @@ Logs ficam em `~/polimonitor/logs/`. Config pm2 = `~/polimonitor/ecosystem.confi
 fork p/ VM-safe; o original `deploy/ecosystem.config.js` mantém 2 cluster p/ máquinas maiores).
 
 ## 4. ⚠️ O QUE DEPENDE DO DONO (itens humanos)
-1. **Senha admin:** `.env` tem `ADMIN_PASSWORD` TEMPORÁRIA (enviada no Telegram) — **trocar** por uma sua. ⏳ PENDENTE
+1. ~~**Senha admin:**~~ ✅ **FEITA** (definida pelo dono — só no `.env`, fora do git). 06-15
 2. ~~**Identidade:** `DEPUTY_NAME`/`DEPUTY_PARTY`~~ ✅ **FEITO** (Jorge Felippe Neto / PL / RJ — 06-15).
 3. **WhatsApp (QR):** abrir `/whatsapp` no painel (logado) e **escanear o QR** com o celular → conecta a sessão
    (salva em `.whatsapp-auth`, gitignored). Sem isso o worker WhatsApp fica aguardando. ⏳ PENDENTE
