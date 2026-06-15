@@ -24,7 +24,7 @@ import {
   Sparkles,
   Heart,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import clsx from 'clsx'
 
 const nav = [
@@ -50,6 +50,11 @@ const nav = [
 export default function Sidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  // No celular (<768px) recolhe ao montar — senão a w-64 come 2/3 da tela.
+  // useEffect (não no initializer) p/ não dar hydration mismatch (SSR não tem window).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 768) setCollapsed(true)
+  }, [])
 
   return (
     <aside
