@@ -28,6 +28,7 @@ const SCOPES_NECESSARIOS = [
   'pages_show_list',
   'pages_read_engagement',
   'pages_read_user_content', // p/ ler comentários do FB e contar
+  'business_management', // SEM isto, me/accounts vem vazio quando a Página é de um Business Manager
   'instagram_basic',
   'instagram_manage_comments',
 ]
@@ -60,7 +61,7 @@ export async function resolverTokenPermanente(
   const accs = await jget(`${GRAPH}/me/accounts?fields=id,name,access_token&access_token=${longUserToken}`)
   if (accs.error) return { ok: false, erro: `me/accounts falhou: ${accs.error.message}` }
   const pages: { id: string; name: string; access_token: string }[] = accs.data ?? []
-  if (!pages.length) return { ok: false, erro: 'nenhuma Página retornada (o token tem pages_show_list e o dono administra a Página?)' }
+  if (!pages.length) return { ok: false, erro: 'me/accounts vazio: 0 Páginas. Se a Página é de um Business Manager, é preciso o scope business_management E selecionar a Página no popup de autorização. Regenere o token marcando business_management + escolhendo a Página.' }
 
   // Preferir a Página configurada, senão a primeira.
   const alvo = process.env.FACEBOOK_PAGE_ID
