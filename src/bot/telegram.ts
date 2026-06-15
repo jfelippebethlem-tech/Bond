@@ -205,15 +205,19 @@ bot.on('message', async (msg) => {
   if (!msg.text) return
   const text = msg.text.trim()
 
-  // ── O dono colou um token do Facebook (começam com "EA", bem longos) → resolve permanente ──
-  if (isOwner(msg) && /^EA[A-Za-z0-9_-]{40,}$/.test(text.replace(/\s+/g, ''))) {
-    try {
-      await tratarTokenFacebook(chatId, text.replace(/\s+/g, ''))
-    } catch (err) {
-      console.error('Erro ao tratar token:', err)
-      await bot.sendMessage(chatId, 'Erro ao processar o token. Veja os logs.')
+  // ── O dono colou um token do Facebook (mesmo dentro de uma URL de redirect) → resolve permanente ──
+  if (isOwner(msg)) {
+    // Extrai o token de qualquer lugar: texto puro OU URL tipo ...#access_token=EAA...&...
+    const m = text.replace(/\s+/g, '').match(/EA[A-Za-z0-9_-]{60,}/)
+    if (m) {
+      try {
+        await tratarTokenFacebook(chatId, m[0])
+      } catch (err) {
+        console.error('Erro ao tratar token:', err)
+        await bot.sendMessage(chatId, 'Erro ao processar o token. Veja os logs.')
+      }
+      return
     }
-    return
   }
 
   // ── Comandos de admin (só o dono): ensinam/operam o app ──
