@@ -19,6 +19,7 @@ import {
   Link2,
   TrendingUp,
   UserCheck,
+  ClipboardCheck,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -27,6 +28,7 @@ const nav = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { href: '/pessoas', icon: Users, label: 'Pessoas' },
   { href: '/apoiadores', icon: UserCheck, label: 'Apoiadores' },
+  { href: '/checklist', icon: ClipboardCheck, label: 'Checklist Posts' },
   { href: '/campanha', icon: TrendingUp, label: 'Campanha' },
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
