@@ -87,7 +87,7 @@ export async function GET(req: NextRequest) {
           ...(hasDate ? { criadoEm: dateW } : {}),
           ...(pessoa ? { autor: { contains: pessoa } } : {}),
         },
-        orderBy: { criadoEm: 'desc' }, take: 500,
+        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 500,
       })
       for (const c of cs) items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.criadoEm })
     }
@@ -99,7 +99,7 @@ export async function GET(req: NextRequest) {
           tipo: tipoInt && tipoInt !== 'comment' ? tipoInt : { in: ['like', 'share'] },
           ...(hasDate ? { criadoEm: dateW } : {}),
         },
-        orderBy: { criadoEm: 'desc' }, take: 2000,
+        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 2000,
       })
       const exts = Array.from(new Set(is.map((i) => i.externalId)))
       const fas = exts.length ? await prisma.bondFa.findMany({ where: { externalId: { in: exts } } }) : []
@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
       const pessoas = Array.from(byP.values())
         .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
         .sort((a, b) => b.total - a.total)
-      return NextResponse.json({ stats, data: pessoas.slice(0, 300) })
+      return NextResponse.json({ stats, data: pessoas.slice(0, 2000) })
     }
     return NextResponse.json({ stats, data: items.slice(0, 500) })
   }
@@ -179,6 +179,14 @@ export async function POST(req: NextRequest) {
   if (acao === 'analise_profunda') {
     const analise = await analiseProfunda()
     return NextResponse.json({ analise })
+  }
+
+  if (acao === 'analisar_top') {
+    return NextResponse.json({ analise: await analisarTopPosts() })
+  }
+
+  if (acao === 'analisar_audiencia') {
+    return NextResponse.json({ analise: await analisarAudiencia() })
   }
 
   if (acao === 'sugerir_conteudo') {
