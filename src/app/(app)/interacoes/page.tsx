@@ -168,21 +168,23 @@ export default function InteracoesPage() {
         <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide">
-              <tr><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center">❤️</th><th className="px-3 py-3 text-center">💬</th><th className="px-3 py-3 text-center">🔁</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
+              <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center">❤️</th><th className="px-3 py-3 text-center">💬</th><th className="px-3 py-3 text-center">🔁</th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {pessoas.map((p) => (
+              {pessoas.map((p, i) => (
                 <tr key={p.pessoa} className="hover:bg-gray-50">
+                  <td className={`px-3 py-2.5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-gray-400'}`}>{i + 1}º</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.pessoa}</td>
                   <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.like || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-blue-600 font-medium">{p.comment || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-green-600 font-medium">{p.share || '—'}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-gray-900">{p.total}</td>
                   <td className="px-3 py-2.5 text-center text-gray-500">{p.nPosts}</td>
                   <td className="px-3 py-2.5">{p.plataformas.map((r) => <span key={r} className={`inline-block text-xs px-2 py-0.5 rounded mr-1 ${REDE(r)}`}>{r}</span>)}</td>
                   <td className="px-3 py-2.5 text-right">{p.comment > 0 && <button onClick={() => { setPessoa(p.pessoa); setTipo('comment'); setModo('lista') }} className="text-blue-600 hover:underline text-xs whitespace-nowrap">ver comentários →</button>}</td>
                 </tr>
               ))}
-              {pessoas.length === 0 && <tr><td colSpan={7} className="px-4 py-10 text-center text-gray-400">Nenhuma interação no período/filtros.</td></tr>}
+              {pessoas.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">Nenhuma interação no período/filtros.</td></tr>}
             </tbody>
           </table>
         </div>
