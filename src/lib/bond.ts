@@ -360,6 +360,14 @@ export async function syncInstagram() {
       if (c.text) {
         await salvarComentario('instagram', post.id, c.id, c.username, c.id, c.text)
       }
+      // respostas (replies) — contam no comments_count do post; sem isso o monitor subconta
+      const replies = (c.replies?.data ?? []) as { id: string; username?: string; text?: string }[]
+      for (const r of replies) {
+        if (!r.username) continue
+        await upsertFa('instagram', r.id, r.username, r.username, false)
+        await registrarInteracao('instagram', r.id, 'comment', post.id)
+        if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text)
+      }
     }
     synced++
   }
