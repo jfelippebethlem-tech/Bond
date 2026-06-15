@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Heart, MessageCircle, Share2, Users, List, Search, RefreshCw, Loader2,
-  Radio, Activity, Image as ImageIcon,
+  Radio, Activity, Image as ImageIcon, Download,
 } from 'lucide-react'
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string }
@@ -78,6 +78,18 @@ export default function InteracoesPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Exporta o que está na tela (mesmos filtros + modo) como CSV — abre o download direto.
+  const exportarCSV = useCallback(() => {
+    const p = new URLSearchParams({ tipo: 'interacoes', formato: 'csv' })
+    if (tipoInteracao) p.set('tipoInteracao', tipoInteracao)
+    if (plataforma) p.set('plataforma', plataforma)
+    if (de) p.set('de', de)
+    if (ate) p.set('ate', ate)
+    if (pessoa) p.set('pessoa', pessoa)
+    if (modo === 'pessoa') p.set('agrupar', 'pessoa')
+    window.open(`/api/bond?${p}`, '_blank')
+  }, [modo, tipoInteracao, plataforma, de, ate, pessoa])
+
   // Ao vivo: re-busca a cada 20s
   useEffect(() => {
     if (timer.current) clearInterval(timer.current)
@@ -110,6 +122,9 @@ export default function InteracoesPage() {
         <div className="flex items-center gap-2">
           <button onClick={() => setAoVivo((v) => !v)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${aoVivo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
             <Radio size={15} className={aoVivo ? 'animate-pulse' : ''} /> {aoVivo ? 'Ao vivo' : 'Ao vivo'}
+          </button>
+          <button onClick={exportarCSV} title="Baixar o que está na tela (mesmos filtros) em CSV" className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <Download size={15} /> CSV
           </button>
           <button onClick={sincronizar} disabled={sincronizando} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">
             {sincronizando ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />} Sincronizar
