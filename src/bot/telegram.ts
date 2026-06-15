@@ -203,3 +203,26 @@ async function registrarComandos() {
   }
 }
 void registrarComandos()
+
+// Alerta proativo: avisa o dono quando o token do Facebook/IG expira (monitor para de receber dados).
+let ultimoAvisoToken = 0
+async function verificarToken() {
+  if (!OWNER_ID || !process.env.FACEBOOK_PAGE_TOKEN) return
+  try {
+    const r = await fetch(`https://graph.facebook.com/v21.0/me?fields=name&access_token=${process.env.FACEBOOK_PAGE_TOKEN}`)
+    if (r.ok) return // token válido — nada a fazer
+    const agora = Date.now()
+    if (agora - ultimoAvisoToken < 12 * 3600_000) return // no máx 1 aviso a cada 12h
+    ultimoAvisoToken = agora
+    await bot.sendMessage(
+      Number(OWNER_ID),
+      '⚠️ *Token do Facebook/Instagram expirou.*\n\nO monitor (Interações/Análise) parou de receber dados novos. Gere um token novo no Graph API Explorer (app "JFN Monitor e Ideia", Generate + autorizar) e me mande — eu reconecto e deixo permanente.',
+      { parse_mode: 'Markdown' },
+    )
+    console.log('[token] alerta de expiração enviado ao dono.')
+  } catch {
+    /* rede — ignora */
+  }
+}
+setInterval(verificarToken, 6 * 3600_000) // a cada 6h
+setTimeout(() => void verificarToken(), 60_000) // 1 check 1min após subir
