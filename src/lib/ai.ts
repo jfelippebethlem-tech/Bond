@@ -10,7 +10,7 @@ function getClient() {
   return client
 }
 
-const MODEL = 'gemini-2.0-flash'
+const MODEL = 'gemini-2.5-flash'
 
 async function chat(prompt: string, maxTokens = 1024): Promise<string> {
   const genAI = getClient()

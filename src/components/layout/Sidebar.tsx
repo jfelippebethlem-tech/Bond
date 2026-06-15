@@ -37,6 +37,7 @@ const nav = [
   { href: '/campanha', icon: TrendingUp, label: 'Campanha' },
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
   { href: '/interacoes', icon: Heart, label: 'Interações' },
+  { href: '/analise', icon: Brain, label: 'Análise de Conteúdo' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
   { href: '/demandas', icon: FileText, label: 'Demandas' },
   { href: '/produtividade', icon: BarChart3, label: 'Produtividade' },
