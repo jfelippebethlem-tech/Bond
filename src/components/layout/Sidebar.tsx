@@ -22,6 +22,7 @@ import {
   ClipboardCheck,
   MessageSquare,
   Sparkles,
+  Heart,
 } from 'lucide-react'
 import { useState } from 'react'
 import clsx from 'clsx'
@@ -35,6 +36,7 @@ const nav = [
   { href: '/whatsapp', icon: MessageSquare, label: 'WhatsApp' },
   { href: '/campanha', icon: TrendingUp, label: 'Campanha' },
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
+  { href: '/interacoes', icon: Heart, label: 'Interações' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
   { href: '/demandas', icon: FileText, label: 'Demandas' },
   { href: '/produtividade', icon: BarChart3, label: 'Produtividade' },

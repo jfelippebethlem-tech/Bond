@@ -64,6 +64,82 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(rascunhos)
   }
 
+  if (tipo === 'interacoes') {
+    const plataforma = searchParams.get('plataforma') || undefined
+    const tipoInt = searchParams.get('tipoInteracao') || undefined // comment | like | share
+    const pessoa = (searchParams.get('pessoa') || '').trim().toLowerCase()
+    const de = searchParams.get('de')
+    const ate = searchParams.get('ate')
+    const agrupar = searchParams.get('agrupar') // 'pessoa' | null
+    const dateW: { gte?: Date; lte?: Date } = {}
+    if (de) dateW.gte = new Date(de + 'T00:00:00')
+    if (ate) dateW.lte = new Date(ate + 'T23:59:59')
+    const hasDate = !!(de || ate)
+
+    type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date }
+    const items: Item[] = []
+
+    // Comentários (têm autor + texto + post)
+    if (!tipoInt || tipoInt === 'comment') {
+      const cs = await prisma.bondComentario.findMany({
+        where: {
+          ...(plataforma ? { plataforma } : {}),
+          ...(hasDate ? { criadoEm: dateW } : {}),
+          ...(pessoa ? { autor: { contains: pessoa } } : {}),
+        },
+        orderBy: { criadoEm: 'desc' }, take: 500,
+      })
+      for (const c of cs) items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.criadoEm })
+    }
+    // Likes/shares (BondInteracao; resolve a pessoa via externalId -> BondFa)
+    if (!tipoInt || tipoInt === 'like' || tipoInt === 'share') {
+      const is = await prisma.bondInteracao.findMany({
+        where: {
+          ...(plataforma ? { plataforma } : {}),
+          tipo: tipoInt && tipoInt !== 'comment' ? tipoInt : { in: ['like', 'share'] },
+          ...(hasDate ? { criadoEm: dateW } : {}),
+        },
+        orderBy: { criadoEm: 'desc' }, take: 2000,
+      })
+      const exts = Array.from(new Set(is.map((i) => i.externalId)))
+      const fas = exts.length ? await prisma.bondFa.findMany({ where: { externalId: { in: exts } } }) : []
+      const nameOf = new Map(fas.map((f) => [f.externalId, f.nome || f.username || f.externalId]))
+      for (const i of is) {
+        const nome = String(nameOf.get(i.externalId) || i.externalId)
+        if (pessoa && !nome.toLowerCase().includes(pessoa)) continue
+        items.push({ id: i.id, tipo: i.tipo, plataforma: i.plataforma, pessoa: nome, texto: null, postId: i.postId, data: i.criadoEm })
+      }
+    }
+    items.sort((a, b) => +new Date(b.data) - +new Date(a.data))
+
+    // Stats PRECISOS (contagem real, não limitada pelo take das listas acima)
+    const comW = { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { criadoEm: dateW } : {}), ...(pessoa ? { autor: { contains: pessoa } } : {}) }
+    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(hasDate ? { criadoEm: dateW } : {}) })
+    const [nComment, nLike, nShare] = await Promise.all([
+      !tipoInt || tipoInt === 'comment' ? prisma.bondComentario.count({ where: comW }) : Promise.resolve(0),
+      !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),
+      !tipoInt || tipoInt === 'share' ? prisma.bondInteracao.count({ where: intW('share') }) : Promise.resolve(0),
+    ])
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare }
+
+    if (agrupar === 'pessoa') {
+      const byP = new Map<string, { pessoa: string; total: number; like: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
+      for (const it of items) {
+        const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
+        e.total++
+        if (it.tipo === 'like') e.like++; else if (it.tipo === 'comment') e.comment++; else if (it.tipo === 'share') e.share++
+        e.plataformas.add(it.plataforma); e.posts.add(it.postId)
+        if (it.data > e.ultima) e.ultima = it.data
+        byP.set(it.pessoa, e)
+      }
+      const pessoas = Array.from(byP.values())
+        .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
+        .sort((a, b) => b.total - a.total)
+      return NextResponse.json({ stats, data: pessoas.slice(0, 300) })
+    }
+    return NextResponse.json({ stats, data: items.slice(0, 500) })
+  }
+
   // Default: overview
   const [perfis, totalPosts, totalFas, insightsNaoLidos, comentariosPendentes, stats] = await Promise.all([
     prisma.bondPerfil.findMany({ where: { ativo: true } }),
