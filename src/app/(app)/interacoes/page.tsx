@@ -136,7 +136,7 @@ export default function InteracoesPage() {
       {token && token.facebook?.status !== 'valid' && (
         <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <span className="text-base leading-none">⚠️</span>
-          <span><b>Token do Facebook/Instagram {token.facebook?.status === 'expired' ? 'EXPIRADO' : token.facebook?.status === 'none' ? 'não configurado' : 'com erro'}.</b> Os dados podem estar desatualizados{token.ultimaSync ? ` (último sync: ${new Date(token.ultimaSync).toLocaleString('pt-BR')})` : ''}. Gere um token novo no Graph API Explorer e envie para reconectar — os dados voltam a ser ao vivo.</span>
+          <span><b>Token do Facebook/Instagram {token.facebook?.status === 'expired' ? 'EXPIRADO' : token.facebook?.status === 'none' ? 'não configurado' : 'com erro'}.</b> Os dados podem estar desatualizados{token.ultimaSync ? ` (último sync: ${new Date(token.ultimaSync).toLocaleString('pt-BR')})` : ''}. Gere um token no Graph API Explorer e <b>cole no bot do Telegram</b> — ele vira <b>permanente</b> (não expira mais) e re-sincroniza sozinho.</span>
         </div>
       )}
       {token && token.facebook?.status === 'valid' && (
