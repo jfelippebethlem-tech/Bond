@@ -3,6 +3,15 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 
 // ─── AI client: OpenRouter (Hermes 3 405B free) com fallback Gemini ────────────
 
+// GUARD anti-cobrança (regra do dono: SEMPRE :free no OpenRouter — nunca chama a versão paga).
+// :free inexistente -> 404 (não cobra); :free existente -> grátis. 'openrouter/free' (router grátis) passa.
+function forcarFree(model: string): string {
+  const m = (model || '').trim()
+  if (m === 'openrouter/free' || m.endsWith(':free')) return m
+  return m.split(':')[0] + ':free'
+}
+const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'nousresearch/hermes-3-llama-3.1-405b:free')
+
 async function callAI(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   maxTokens = 1024
@@ -18,7 +27,7 @@ async function callAI(
         'X-Title': 'PolitiMonitor Hermes',
       },
       body: JSON.stringify({
-        model: 'nousresearch/hermes-3-llama-3.1-405b:free',
+        model: HERMES_MODEL,
         messages,
         max_tokens: maxTokens,
       }),
