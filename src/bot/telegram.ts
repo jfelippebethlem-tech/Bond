@@ -1,8 +1,12 @@
 import fs from 'fs'
 import path from 'path'
+import { exec } from 'child_process'
 
 import TelegramBot from 'node-telegram-bot-api'
 import { PrismaClient } from '@prisma/client'
+
+import { resolverTokenPermanente } from '../lib/social/token'
+import { syncInstagram, syncFacebook } from '../lib/bond'
 
 const prisma = new PrismaClient()
 const token = process.env.TELEGRAM_BOT_TOKEN
@@ -66,15 +70,20 @@ const TXT: Record<string, string> = {
     '4. Pronto — a sessão fica salva e o gabinete passa a receber as conversas.',
   ].join('\n'),
   '/redes': [
-    '🔗 *Conectar redes sociais (Bond)*',
+    '🔗 *Conectar Facebook + Instagram (permanente)*',
     '',
-    '• *Twitter/X:* developer.twitter.com → gere o *Bearer Token*',
-    '• *Facebook + Instagram:* developers.facebook.com',
-    '   🛑 REUSE *um* app (não crie vários — gera duplicados!)',
-    '   No Graph API Explorer: marque as permissões `instagram_basic`, `instagram_manage_comments`, `pages_read_engagement`, `pages_show_list` ANTES de *Gerar* (senão sai só `public_profile`)',
-    '   Depois pegue o token da *Página* em `me/accounts`',
+    '1. Abra o *Graph API Explorer*: developers.facebook.com/tools/explorer',
+    '2. App: *JFN Monitor e Ideia* (🛑 não crie outro — reuse esse)',
+    '3. Marque ESTAS permissões ANTES de *Generate Access Token*:',
+    '   `pages_show_list`, `pages_read_engagement`, `pages_read_user_content`,',
+    '   `instagram_basic`, `instagram_manage_comments`',
+    '   (sem elas: comentários do FB e "quem curtiu" ficam incompletos)',
+    '4. Clique *Generate Access Token* e autorize a Página.',
     '',
-    'Me mande o token (em *texto*) aqui que eu ligo e valido na hora.',
+    '👉 *Copie esse token e cole aqui no chat.* Eu faço o resto:',
+    'transformo em *PERMANENTE* (não expira mais), salvo e já sincronizo.',
+    '',
+    '• *Twitter/X:* developer.twitter.com → me mande o *Bearer Token*.',
   ].join('\n'),
   '/senha': [
     '🔑 *Trocar a senha de admin*',
@@ -113,6 +122,64 @@ async function statusAoVivo(chatId: string) {
   )
 }
 
+// Grava/atualiza chaves no .env (persiste o token entre reinícios).
+function upsertEnv(updates: Record<string, string>) {
+  const envPath = path.join(process.cwd(), '.env')
+  let txt = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : ''
+  for (const [k, v] of Object.entries(updates)) {
+    const linha = `${k}="${v}"`
+    const re = new RegExp(`^${k}=.*$`, 'm')
+    if (re.test(txt)) txt = txt.replace(re, linha)
+    else txt += (txt.endsWith('\n') || txt === '' ? '' : '\n') + linha + '\n'
+  }
+  fs.writeFileSync(envPath, txt)
+}
+
+// O dono colou um token do Facebook → resolve p/ PERMANENTE, salva, re-sincroniza e confirma.
+async function tratarTokenFacebook(chatId: string, userToken: string) {
+  await bot.sendMessage(chatId, '🔄 Recebi o token. Tornando permanente e reconectando…')
+  const r = await resolverTokenPermanente(userToken)
+  if (!r.ok || !r.pageToken) {
+    await bot.sendMessage(chatId, `❌ Não consegui validar o token.\n\nMotivo: ${r.erro}\n\nGere de novo no Graph API Explorer (app "JFN Monitor e Ideia", marque as permissões ANTES de *Generate*) e me reenvie.`, { parse_mode: 'Markdown' })
+    return
+  }
+  // Persiste no .env + ativa no processo atual (sync lê process.env em tempo de chamada).
+  const updates: Record<string, string> = { FACEBOOK_PAGE_TOKEN: r.pageToken }
+  if (r.pageId) updates.FACEBOOK_PAGE_ID = r.pageId
+  if (r.igId) updates.INSTAGRAM_BUSINESS_ID = r.igId
+  upsertEnv(updates)
+  process.env.FACEBOOK_PAGE_TOKEN = r.pageToken
+  if (r.pageId) process.env.FACEBOOK_PAGE_ID = r.pageId
+  if (r.igId) process.env.INSTAGRAM_BUSINESS_ID = r.igId
+
+  const permLinha = r.permanente
+    ? '🔒 *PERMANENTE* (não expira mais).'
+    : '⚠️ Ainda com expiração — verifique se autorizou a permissão antes de gerar.'
+  const scopeLinha = r.faltamScopes?.length
+    ? `\n⚠️ Faltam permissões: \`${r.faltamScopes.join(', ')}\` (sem elas, contagem de comentários do FB e/ou IG ficam incompletas).`
+    : '\n✅ Todas as permissões necessárias presentes.'
+  await bot.sendMessage(
+    chatId,
+    `✅ *Conectado!*\n\n📄 Página: *${r.pageName}*\n📸 Instagram: ${r.igUsername ? `@${r.igUsername}` : '(não vinculado)'}\n${permLinha}${scopeLinha}\n\n🔄 Sincronizando agora…`,
+    { parse_mode: 'Markdown' },
+  )
+
+  // Re-sincroniza JÁ (o worker tem o token novo no process.env).
+  try {
+    const ig = await syncInstagram().catch((e) => ({ synced: 0, error: String(e) }))
+    const fb = await syncFacebook().catch((e) => ({ synced: 0, error: String(e) }))
+    await bot.sendMessage(
+      chatId,
+      `📊 *Sync concluído.*\nInstagram: ${('synced' in ig ? ig.synced : 0)} posts${('error' in ig && ig.error) ? ` (${ig.error})` : ''}\nFacebook: ${('synced' in fb ? fb.synced : 0)} posts${('error' in fb && fb.error) ? ` (${fb.error})` : ''}\n\nAbra *Interações* — agora ao vivo.`,
+      { parse_mode: 'Markdown' },
+    )
+  } catch (e) {
+    await bot.sendMessage(chatId, `Sync deu erro: ${e instanceof Error ? e.message : String(e)}`)
+  }
+  // Reinicia o app + bond-worker p/ pegarem o .env novo (NÃO o telegram-worker, senão corta a conversa).
+  exec('bash -lc "pm2 restart politimonitor bond-worker --update-env"', () => {})
+}
+
 const isOwner = (msg: TelegramBot.Message) =>
   OWNER_ID !== '' && String(msg.from?.id ?? '') === OWNER_ID
 
@@ -136,6 +203,17 @@ bot.on('message', async (msg) => {
 
   if (!msg.text) return
   const text = msg.text.trim()
+
+  // ── O dono colou um token do Facebook (começam com "EA", bem longos) → resolve permanente ──
+  if (isOwner(msg) && /^EA[A-Za-z0-9_-]{40,}$/.test(text.replace(/\s+/g, ''))) {
+    try {
+      await tratarTokenFacebook(chatId, text.replace(/\s+/g, ''))
+    } catch (err) {
+      console.error('Erro ao tratar token:', err)
+      await bot.sendMessage(chatId, 'Erro ao processar o token. Veja os logs.')
+    }
+    return
+  }
 
   // ── Comandos de admin (só o dono): ensinam/operam o app ──
   if (text.startsWith('/') && isOwner(msg)) {
