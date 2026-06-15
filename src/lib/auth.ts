@@ -40,7 +40,8 @@ export async function getSessionFromRequest(req: NextRequest) {
 export function setSessionCookie(token: string) {
   cookies().set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // secure só com HTTPS (COOKIE_SECURE=true). Em HTTP puro, secure:true descarta o cookie.
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7,
     path: '/',

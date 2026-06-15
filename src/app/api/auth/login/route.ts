@@ -14,7 +14,10 @@ export async function POST(req: NextRequest) {
 
   response.cookies.set('pm_session', token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    // secure só quando servido por HTTPS — ative COOKIE_SECURE=true junto com nginx+TLS.
+    // Em HTTP puro (acesso direto :3000), secure:true faria o navegador DESCARTAR o cookie
+    // e o login "voltaria" pra tela de login. Default false p/ funcionar em HTTP.
+    secure: process.env.COOKIE_SECURE === 'true',
     sameSite: 'lax',
     maxAge: 60 * 60 * 24 * 7,
     path: '/',
