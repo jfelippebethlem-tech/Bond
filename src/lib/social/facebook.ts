@@ -16,11 +16,17 @@ export async function getFacebookPageInfo() {
 
 export async function getFacebookPosts(limit = 20) {
   if (!process.env.FACEBOOK_PAGE_TOKEN) return []
-  const fields = 'id,message,story,created_time,full_picture,permalink_url,likes.summary(true),comments.summary(true),shares'
-  const res = await fetch(fbUrl('/me/posts', `fields=${fields}&limit=${limit}`))
-  if (!res.ok) return []
-  const data = await res.json()
-  return data.data ?? []
+  const base = 'id,message,story,created_time,full_picture,permalink_url,likes.summary(true),shares'
+  // comments.summary(true) exige pages_read_user_content; se o token nao tiver, a request inteira falha (#200).
+  // Tenta COM comentarios; se falhar, cai p/ SEM (posts ainda sincronizam, so o nº de comentarios fica 0).
+  for (const fields of [`${base},comments.summary(true)`, base]) {
+    const res = await fetch(fbUrl('/me/posts', `fields=${fields}&limit=${limit}`))
+    if (res.ok) {
+      const data = await res.json()
+      return data.data ?? []
+    }
+  }
+  return []
 }
 
 export async function getFacebookPostInsights(postId: string) {
