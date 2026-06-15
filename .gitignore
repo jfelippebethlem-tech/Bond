@@ -37,3 +37,6 @@ tsconfig.tsbuildinfo
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# runtime (fotos do telegram, guias gerados, etc.)
+data/
