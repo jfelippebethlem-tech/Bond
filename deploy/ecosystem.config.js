@@ -57,6 +57,7 @@ module.exports = {
     },
     worker('bond-worker', 'src/agent/bond-worker.ts'),
     worker('hermes-worker', 'src/agent/hermes-worker.ts'),
+    worker('telegram-worker', 'src/bot/telegram.ts'),
     worker('whatsapp-worker', 'src/agent/whatsapp-worker.ts'),
   ],
 }
