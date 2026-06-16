@@ -113,8 +113,11 @@ do `state.db` do Yoda — ver o fluxo no JFN (`mfa_telegram`). ⚠️ 1 poller s
   `publicadoEm` cai no `criadoEm` e é backfillado a cada sync. Nova tela **`/analise`**: IA (`analiseProfunda`) cruza posts reais → o que viralizou/não,
   **benchmark com perfis virais da DIREITA**, **alavancas do algoritmo** (saves/shares/Reels/1ª hora), plano de ação.
   Fixes: **Gemini 2.0→2.5** (2.0 descontinuado, quebrava toda IA) + **dotenv nos workers** (sync agendado = tudo vivo).
-  Pendente: **posts do Facebook ainda sincronizam 0** (Página achada, mas `getFacebookPosts` traz 0 — investigar) ·
-  Page token curto (falta App Secret p/ longa duração).
+  **RESOLVIDO 06-16: posts do Facebook sincronizam** (20 posts, 1.139 likes / 342 coment / 272 compart reais — o "0"
+  era do token curto/errado; o token permanente destravou). **Pendente real:** `alcance`/`impressoes` (reach) vêm **0**
+  em FB e IG porque o endpoint de **Insights** não retorna — o mapeamento do código está correto
+  (`post_impressions_unique`→alcance), falta a permissão **`read_insights`** no token (ação Meta do dono). Sem reach,
+  `engajamento` (taxa) fica 0. Page token: já permanente via System User (ver acima).
 - **06-15 (acesso público + login + bot):** Security List da Oracle aberta (porta 3000 pública, validada de fora via
   server-1); **fix do login** (cookie `secure` quebrava em HTTP → `COOKIE_SECURE`); senha `JFNCAMPANHA`; **comandos vivos**
   no @BondCampanhaBot (`telegram-worker`, 5º processo pm2); identidade Oracle esclarecida (JFN-Worker=jfn-core). WhatsApp:
