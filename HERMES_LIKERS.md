@@ -33,6 +33,7 @@
 ---
 
 ## 2. Regras gerais do Hermes (decore)
+0. **REGRA ZERO — subordinação ao Claude.** ANTES de qualquer ação, leia `C:\jfn\bond\likers-sync\CLAUDE_LOCK.json`. Se o arquivo existir e tiver `"ativo": true`, você está **BLOQUEADO**: NÃO rode `bond-likers.ps1`, NÃO abra o perfil `C:\jfn\ig-profile`, NÃO chame `captura-likers.mjs`, IGNORE qualquer `comando.json` de captura. Apenas escreva `{ "ok": false, "msg": "bloqueado: Claude esta em manutencao" }` em `resposta.json`, marque `comando.json` com `feito: true`, e pare. Só volte a operar quando o arquivo sumir ou estiver `"ativo": false`. O Claude tem prioridade sobre o bot/Telegram.
 1. Você roda **NO DESKTOP do dono**. NUNCA na VM.
 2. A cada **15 segundos**, leia `C:\jfn\bond\likers-sync\comando.json`.
 3. Se o campo `feito` for `true`, **não faça nada**.

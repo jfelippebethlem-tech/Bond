@@ -69,20 +69,86 @@ async function getPostIds(ctx, dsUserId, numPosts) {
     const r = await ctx.request.get(url, { headers })
     if (!r.ok()) break
     const d = await r.json()
-    for (const it of (d.items || [])) ids.push(String(it.pk || it.id))
+    for (const it of (d.items || [])) ids.push({ pk: String(it.pk || it.id), code: it.code || null })
     if (!d.more_available || !d.next_max_id) break
     maxId = d.next_max_id
     await sleep(rand(2000, 4000))
   }
   return ids.slice(0, numPosts)
 }
-async function getLikers(ctx, pid) {
+// Likers: fetch DENTRO da pagina (autenticado, com Referer/sec-fetch same-origin
+// que o IG exige nesse endpoint). O ctx.request cai no roteador HTML do app.
+// A pagina fica parada numa URL estavel (nunca damos page.goto durante o loop),
+// entao nao ha "Execution context destroyed".
+// Metodo ORIGINAL (ctx.request) — mantido pra comparacao lado a lado.
+async function likersViaRequest(ctx, pid) {
   const headers = await igHeaders(ctx)
   const r = await ctx.request.get(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { headers })
-  if (r.status() === 429) return { rateLimited: true }
-  if (!r.ok()) return { error: r.status() }
-  const d = await r.json()
-  return { users: (d.users || []).map((u) => u.username).filter(Boolean) }
+  const ct = r.headers()['content-type'] || ''
+  return { status: r.status(), ct, ok: ct.includes('json') }
+}
+async function getLikers(page, pid) {
+  if (process.env.IG_COMPARE === 'true') {
+    const viaReq = await likersViaRequest(page.context(), pid)
+    console.log('  [COMPARA] ctx.request -> status', viaReq.status, 'ct', viaReq.ct, viaReq.ok ? 'JSON✅' : 'HTML/erro❌')
+  }
+  const out = await page.evaluate(async (pid) => {
+    try {
+      const resp = await fetch(`https://www.instagram.com/api/v1/media/${pid}/likers/`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' },
+      })
+      const ct = resp.headers.get('content-type') || ''
+      const text = await resp.text()
+      return { status: resp.status, ct, text }
+    } catch (e) {
+      return { status: -1, ct: '', text: String(e && e.message || e) }
+    }
+  }, pid)
+  if (out.status === 429) return { rateLimited: true }
+  if (process.env.IG_DEBUG === 'true' || process.env.IG_COMPARE === 'true') {
+    console.log('  [COMPARA] in-page fetch -> status', out.status, 'ct', out.ct, out.ct.includes('json') ? 'JSON✅' : 'HTML/erro❌')
+  }
+  if (out.status !== 200 || !out.ct.includes('json')) return { error: out.status + '_' + (out.ct || 'nohdr').split(';')[0] }
+  try {
+    const d = JSON.parse(out.text)
+    return { users: (d.users || []).map((u) => u.username).filter(Boolean) }
+  } catch { return { error: 'parse' } }
+}
+
+// MÉTODO ROBUSTO: lê os curtidores DIRETO do DOM do modal "liked_by".
+// Imune a endpoint REST morto / mudanca de doc_id. É o que um humano ve.
+const NAO_USER = new Set(['explore', 'reels', 'reel', 'direct', 'accounts', 'p', 'stories', 'about', 'legal', 'privacy', 'tv'])
+async function getLikersDOM(page, code) {
+  if (!code) return { error: 'sem_code' }
+  await page.goto(`https://www.instagram.com/p/${code}/liked_by/`, { waitUntil: 'domcontentloaded' })
+  try { await page.waitForSelector('div[role="dialog"] a[href^="/"]', { timeout: 9000 }) }
+  catch { return { error: 'sem_dialog' } }
+  const seen = new Set()
+  let prev = -1, estavel = 0
+  for (let i = 0; i < 80 && estavel < 3; i++) {
+    const users = await page.evaluate(() => {
+      const dlg = document.querySelector('div[role="dialog"]')
+      if (!dlg) return []
+      const out = []
+      for (const a of dlg.querySelectorAll('a[href^="/"]')) {
+        const m = (a.getAttribute('href') || '').match(/^\/([A-Za-z0-9._]+)\/$/)
+        if (m) out.push(m[1])
+      }
+      return out
+    })
+    users.forEach((u) => { if (!NAO_USER.has(u)) seen.add(u) })
+    await page.evaluate(() => {
+      const dlg = document.querySelector('div[role="dialog"]')
+      if (!dlg) return
+      const sc = [...dlg.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 60)
+      if (sc) sc.scrollTop = sc.scrollHeight
+    })
+    await page.waitForTimeout(rand(1100, 2100))
+    if (seen.size === prev) estavel++; else { estavel = 0; prev = seen.size }
+  }
+  return { users: [...seen] }
 }
 
 async function main() {
@@ -108,6 +174,44 @@ async function main() {
   const dsUserId = await dsUserIdDo(ctx)
   if (!dsUserId) { escreverStatus(false, 'sem_ds_user_id'); await ctx.close(); process.exit(2) }
 
+  // MODO SNIFFER: abre 1 post, abre o modal de curtidores e captura a requisicao
+  // REAL (GraphQL/doc_id) que o app web usa. Acao de usuario normal = baixo risco.
+  if (process.env.IG_SNIFF === 'true') {
+    const headers = await igHeaders(ctx)
+    const fr = await ctx.request.get(`https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=3`, { headers })
+    const fd = await fr.json()
+    const item = (fd.items || [])[0]
+    const code = item && (item.code || item.pk)
+    console.log('  [SNIFF] post code=', code, 'pk=', item && item.pk)
+    const captura = []
+    page.on('response', async (resp) => {
+      const u = resp.url()
+      if (/likers|liked_by|graphql/i.test(u)) {
+        const ct = resp.headers()['content-type'] || ''
+        let req = resp.request()
+        let pd = null; try { pd = req.postData() } catch {}
+        captura.push({ url: u.slice(0, 220), status: resp.status(), ct: ct.split(';')[0], docId: (pd && (pd.match(/doc_id=(\d+)/) || [])[1]) || (u.match(/doc_id=(\d+)/) || [])[1] || null, postData: pd ? pd.slice(0, 300) : null })
+        console.log('  [SNIFF resp]', resp.status(), ct.split(';')[0], u.slice(0, 160))
+      }
+    })
+    await page.goto(`https://www.instagram.com/p/${code}/`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(3500)
+    // tenta abrir os curtidores: link "liked_by" ou o botao de curtidas
+    try {
+      const link = await page.$(`a[href*="liked_by"]`)
+      if (link) { await link.click() } else { await page.goto(`https://www.instagram.com/p/${code}/liked_by/`, { waitUntil: 'domcontentloaded' }) }
+    } catch {}
+    await page.waitForTimeout(5000)
+    console.log('  [SNIFF] === requisicoes capturadas ===')
+    console.log(JSON.stringify(captura, null, 2))
+    fs.writeFileSync(path.join(process.cwd(), 'sniff-likers.json'), JSON.stringify(captura, null, 2))
+    // Testa TAMBEM o scraper de DOM no mesmo post (prova que extrai usernames).
+    console.log('  [SNIFF] === testando scraper de DOM ===')
+    const dom = await getLikersDOM(page, code)
+    console.log('  [SNIFF DOM] resultado:', dom.users ? `${dom.users.length} curtidores: ${dom.users.slice(0, 15).join(', ')}` : 'erro ' + dom.error)
+    await ctx.close(); process.exit(0)
+  }
+
   // Retoma ou inicia
   let state = loadState()
   if (state && Array.isArray(state.pending) && state.pending.length) {
@@ -123,12 +227,12 @@ async function main() {
   const total = state.done.length + state.pending.length
   let desdeUltimaPausa = 0
   while (state.pending.length) {
-    const pid = state.pending[0]
-    const res = await getLikers(ctx, pid)
+    const post = state.pending[0]
+    const res = await getLikersDOM(page, post.code)
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
     if (res.users) for (const u of res.users) state.contagem[u] = (state.contagem[u] || 0) + 1
-    state.done.push(pid); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
-    console.log(`  [${state.done.length}/${total}] ${pid} -> ${res.users ? res.users.length : 'erro ' + res.error}`)
+    state.done.push(post.pk); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
+    console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? res.users.length + ' curtidores' : 'erro ' + res.error}`)
     await sleep(rand(4000, 9000)) // pausa humana entre posts (4-9s)
     // Trava anti-ban: a cada 6 posts, pausa longa (igual ao Leaderboard).
     if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 20s (anti-ban)...'); await sleep(20000) }
