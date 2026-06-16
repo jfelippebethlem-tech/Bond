@@ -40,3 +40,7 @@ yarn-error.log*
 
 # runtime (fotos do telegram, guias gerados, etc.)
 data/
+likers-state.json
+bond-likers-log.txt
+likers.json
+likers.csv
