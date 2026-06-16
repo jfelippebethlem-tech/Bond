@@ -53,35 +53,36 @@ async function estaLogado(page) {
   } catch { return false }
 }
 
-async function getPostIds(page, dsUserId, numPosts) {
-  return page.evaluate(async ({ dsUserId, numPosts }) => {
-    const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
-    const headers = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
-    const ids = []; let maxId = null
-    while (ids.length < numPosts) {
-      let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=33`
-      if (maxId) url += `&max_id=${maxId}`
-      const r = await fetch(url, { headers, credentials: 'include' })
-      if (!r.ok) break
-      const d = await r.json()
-      for (const it of (d.items || [])) ids.push(String(it.pk || it.id))
-      if (!d.more_available || !d.next_max_id) break
-      maxId = d.next_max_id
-      await new Promise((x) => setTimeout(x, 2000 + Math.random() * 2000))
-    }
-    return ids.slice(0, numPosts)
-  }, { dsUserId, numPosts })
+// Chamadas via context.request (HTTP com a sessao do perfil) — robusto, sem
+// depender da pagina (evita "Execution context destroyed" quando o IG navega).
+async function igHeaders(ctx) {
+  const c = await ctx.cookies('https://www.instagram.com')
+  const csrf = (c.find((x) => x.name === 'csrftoken') || {}).value || ''
+  return { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
 }
-async function getLikers(page, pid) {
-  return page.evaluate(async ({ pid }) => {
-    const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
-    const headers = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
-    const r = await fetch(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { headers, credentials: 'include' })
-    if (r.status === 429) return { rateLimited: true }
-    if (!r.ok) return { error: r.status }
+async function getPostIds(ctx, dsUserId, numPosts) {
+  const headers = await igHeaders(ctx)
+  const ids = []; let maxId = null
+  while (ids.length < numPosts) {
+    let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=33`
+    if (maxId) url += `&max_id=${maxId}`
+    const r = await ctx.request.get(url, { headers })
+    if (!r.ok()) break
     const d = await r.json()
-    return { users: (d.users || []).map((u) => u.username).filter(Boolean) }
-  }, { pid })
+    for (const it of (d.items || [])) ids.push(String(it.pk || it.id))
+    if (!d.more_available || !d.next_max_id) break
+    maxId = d.next_max_id
+    await sleep(rand(2000, 4000))
+  }
+  return ids.slice(0, numPosts)
+}
+async function getLikers(ctx, pid) {
+  const headers = await igHeaders(ctx)
+  const r = await ctx.request.get(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { headers })
+  if (r.status() === 429) return { rateLimited: true }
+  if (!r.ok()) return { error: r.status() }
+  const d = await r.json()
+  return { users: (d.users || []).map((u) => u.username).filter(Boolean) }
 }
 
 async function main() {
@@ -113,21 +114,24 @@ async function main() {
     console.log(`↺ Retomando: ${state.done.length} feitos, ${state.pending.length} restantes.`)
   } else {
     console.log(`▶ Nova captura dos ${NUM_POSTS} posts recentes...`)
-    const ids = await getPostIds(page, dsUserId, NUM_POSTS)
+    const ids = await getPostIds(ctx, dsUserId, NUM_POSTS)
     if (!ids.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
     state = { contagem: {}, done: [], pending: ids }; saveState(state)
     console.log(`  ${ids.length} posts na fila.`)
   }
 
   const total = state.done.length + state.pending.length
+  let desdeUltimaPausa = 0
   while (state.pending.length) {
     const pid = state.pending[0]
-    const res = await getLikers(page, pid)
+    const res = await getLikers(ctx, pid)
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
     if (res.users) for (const u of res.users) state.contagem[u] = (state.contagem[u] || 0) + 1
     state.done.push(pid); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
     console.log(`  [${state.done.length}/${total}] ${pid} -> ${res.users ? res.users.length : 'erro ' + res.error}`)
-    await sleep(rand(3000, 7000))
+    await sleep(rand(4000, 9000)) // pausa humana entre posts (4-9s)
+    // Trava anti-ban: a cada 6 posts, pausa longa (igual ao Leaderboard).
+    if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 20s (anti-ban)...'); await sleep(20000) }
   }
 
   await ctx.close()
