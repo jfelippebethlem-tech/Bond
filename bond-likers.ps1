@@ -84,11 +84,15 @@ try {
     } else { Write-Host "Ja agendado (toda sexta as 9h)." -ForegroundColor DarkGray }
   }
 
-  # 5) Dependencias (so na 1a vez). ErrorActionPreference=Continue p/ avisos do
-  #    npm (stderr) NAO matarem o script — checamos so o codigo de saida.
-  if (-not (Test-Path (Join-Path $PSScriptRoot "node_modules\playwright"))) {
-    Write-Host "Instalando dependencias (uma vez, 1-2 min)..." -ForegroundColor Cyan
+  # 5) Dependencias. Checa o ARQUIVO real do playwright (nao so a pasta), pra
+  #    pegar instalacao quebrada (ex.: node_modules de Linux vindo do Syncthing).
+  $pwOk = Test-Path (Join-Path $PSScriptRoot "node_modules\playwright\index.js")
+  if (-not $pwOk) {
+    Write-Host "Instalando dependencias (1a vez ou conserto, 1-2 min)..." -ForegroundColor Cyan
     $ErrorActionPreference = "Continue"
+    # se houver node_modules quebrado (ex.: de Linux), apaga so o playwright p/ reinstalar limpo
+    $pwDir = Join-Path $PSScriptRoot "node_modules\playwright"
+    if (Test-Path $pwDir) { Remove-Item -Recurse -Force $pwDir -ErrorAction SilentlyContinue }
     npm install playwright dotenv 2>&1 | Out-Host
     $rc = $LASTEXITCODE
     if ($rc -eq 0) { npx playwright install chromium 2>&1 | Out-Host; $rc = $LASTEXITCODE }
