@@ -16,9 +16,9 @@
 | Perfil do navegador (login salvo) | `C:\jfn\ig-profile\` | onde a sessão do IG fica salva |
 | `.env` local (cookie/senha) | `C:\jfn\bond\.env` | `IG_USERNAME`, `IG_PASSWORD`, etc. (só no desktop) |
 | Estado da retomada | `C:\jfn\bond\likers-state.json` | progresso (pra continuar de onde parou) |
-| **Pasta sincronizada (Syncthing)** | `C:\jfn\likers-sync\` | troca de arquivos com a VM |
+| **Pasta sincronizada (Syncthing)** | `C:\jfn\bond\likers-sync\` | troca de arquivos com a VM |
 
-### Na pasta sincronizada `C:\jfn\likers-sync\` (= `~/likers-sync/` na VM)
+### Na pasta sincronizada `C:\jfn\bond\likers-sync\` (= `~/likers-sync/` na VM)
 | Arquivo | Quem escreve | Pra quê |
 |---|---|---|
 | `likers.json` | desktop (captura) | ranking de curtidores → a VM importa |
@@ -34,9 +34,9 @@
 
 ## 2. Regras gerais do Hermes (decore)
 1. Você roda **NO DESKTOP do dono**. NUNCA na VM.
-2. A cada **15 segundos**, leia `C:\jfn\likers-sync\comando.json`.
+2. A cada **15 segundos**, leia `C:\jfn\bond\likers-sync\comando.json`.
 3. Se o campo `feito` for `true`, **não faça nada**.
-4. Ao terminar QUALQUER comando: escreva a resposta em `C:\jfn\likers-sync\resposta.json` e marque `comando.json` com `feito: true`.
+4. Ao terminar QUALQUER comando: escreva a resposta em `C:\jfn\bond\likers-sync\resposta.json` e marque `comando.json` com `feito: true`.
 5. Nunca invente. Se não souber, escreva `{ "ok": false, "msg": "nao sei" }` em `resposta.json` e pare.
 
 ---
