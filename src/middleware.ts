@@ -3,7 +3,8 @@ import { getSessionFromRequest } from '@/lib/auth'
 
 // /guia-*, /privacidade, /termos são páginas públicas (instrução/legais, sem dado sensível) —
 // abertas sem login. Privacidade/Termos são exigidas pelo Facebook Login (URLs públicas).
-const publicPaths = ['/login', '/api/auth/login', '/guia-', '/privacidade', '/termos', '/exclusao-dados', '/guia-permissoes']
+// /api/ingest tem auth própria (token x-ingest-token), por isso fora da sessão.
+const publicPaths = ['/login', '/api/auth/login', '/guia-', '/privacidade', '/termos', '/exclusao-dados', '/guia-permissoes', '/api/ingest']
 
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
