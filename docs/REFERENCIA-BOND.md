@@ -108,7 +108,9 @@ do `state.db` do Yoda — ver o fluxo no JFN (`mfa_telegram`). ⚠️ 1 poller s
   24,2k) **conectados** (Page token derivado do User token via `me/accounts`) — lendo posts/comentários reais (244
   pessoas, 909 comentários). Nova tela **`/interacoes`**: quem curtiu/comentou/compartilhou, **filtro por data** com
   presets (hoje/semana/mês/ano/mês-específico) + cards de totais + **modo ao vivo** (auto-refresh 20s) + drill-down nos
-  comentários por pessoa. Nova tela **`/analise`**: IA (`analiseProfunda`) cruza posts reais → o que viralizou/não,
+  comentários por pessoa. **Fix 06-16:** o filtro por data agora usa a **data REAL** do comentário (`publicadoEm` =
+  created_time FB / timestamp IG), não a hora de ingestão (`criadoEm`) — antes o filtro era ignorado. Legado sem
+  `publicadoEm` cai no `criadoEm` e é backfillado a cada sync. Nova tela **`/analise`**: IA (`analiseProfunda`) cruza posts reais → o que viralizou/não,
   **benchmark com perfis virais da DIREITA**, **alavancas do algoritmo** (saves/shares/Reels/1ª hora), plano de ação.
   Fixes: **Gemini 2.0→2.5** (2.0 descontinuado, quebrava toda IA) + **dotenv nos workers** (sync agendado = tudo vivo).
   Pendente: **posts do Facebook ainda sincronizam 0** (Página achada, mas `getFacebookPosts` traz 0 — investigar) ·
