@@ -63,6 +63,23 @@ async function getLikers(page, pid) {
   }, { pid })
 }
 
+// Salva o cookie RENOVADO de volta no .env (o IG estende a sessao a cada visita).
+// Assim as rodadas semanais mantem o login vivo sozinhas.
+async function atualizarEnvCookies(ctx) {
+  try {
+    const cookies = await ctx.cookies('https://www.instagram.com')
+    const get = (n) => (cookies.find((c) => c.name === n) || {}).value
+    const sid = get('sessionid'), csrf = get('csrftoken'), ds = get('ds_user_id')
+    const envPath = path.join(process.cwd(), '.env')
+    if (!sid || !fs.existsSync(envPath)) return
+    let txt = fs.readFileSync(envPath, 'utf8')
+    const set = (k, v) => { if (!v) return; const re = new RegExp(`^${k}=.*$`, 'm'); const line = `${k}="${v}"`; txt = re.test(txt) ? txt.replace(re, line) : (txt.trimEnd() + `\n${line}\n`) }
+    set('IG_SESSIONID', sid); set('IG_CSRFTOKEN', csrf); set('IG_DS_USER_ID', ds)
+    fs.writeFileSync(envPath, txt)
+    console.log('🔄 Cookie renovado salvo no .env (sessao mantida viva).')
+  } catch { /* nao critico */ }
+}
+
 function gravarSaida(contagem) {
   const ranking = Object.entries(contagem).map(([username, curtidas]) => ({ username, curtidas })).sort((a, b) => b.curtidas - a.curtidas)
   fs.mkdirSync(OUT, { recursive: true })
@@ -110,6 +127,7 @@ async function main() {
     await sleep(rand(3000, 7000))
   }
 
+  await atualizarEnvCookies(ctx) // renova o cookie no .env antes de fechar
   await browser.close()
   const ranking = gravarSaida(state.contagem)
   try { fs.unlinkSync(STATE_FILE) } catch {} // rodada completa -> limpa o estado
