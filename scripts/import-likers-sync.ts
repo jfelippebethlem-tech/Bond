@@ -41,9 +41,22 @@ async function main() {
   const ultimo = fs.existsSync(MARCA) ? fs.readFileSync(MARCA, 'utf8').trim() : ''
   if (mtime === ultimo) { return } // nada novo
 
-  let itens: { username?: string; curtidas?: number }[] = []
-  try { itens = JSON.parse(fs.readFileSync(ARQ, 'utf8')) } catch (e) { console.error('JSON inválido:', String(e)); return }
-  if (!Array.isArray(itens)) { console.error('esperava um array'); return }
+  let j: any
+  try { j = JSON.parse(fs.readFileSync(ARQ, 'utf8')) } catch (e) { console.error('JSON inválido:', String(e)); return }
+  // Normaliza: nosso formato simples OU export/localStorage do Leaderboard.
+  let arr: any[] = []
+  if (Array.isArray(j)) arr = j
+  else if (j?.likerMap && typeof j.likerMap === 'object') arr = Object.values(j.likerMap)
+  else if (Array.isArray(j?.followingLeaderboard) || Array.isArray(j?.notFollowingLeaderboard)) arr = [...(j.followingLeaderboard || []), ...(j.notFollowingLeaderboard || [])]
+  const norm = new Map<string, number>()
+  for (const o of arr) {
+    const u = String((o?.user && o.user.username) ?? o?.username ?? '').replace(/^@/, '').trim()
+    if (!u) continue
+    const n = Math.max(0, Math.round(Number(o?.likesCount ?? o?.curtidas ?? o?.likes ?? o?.count ?? 0) || 0))
+    norm.set(u, Math.max(norm.get(u) ?? 0, n))
+  }
+  const itens = Array.from(norm.entries()).map(([username, curtidas]) => ({ username, curtidas }))
+  if (!itens.length) { return }
 
   let ok = 0
   for (const it of itens) {
