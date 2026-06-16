@@ -273,7 +273,12 @@ async function main() {
   let desdeUltimaPausa = 0
   while (state.pending.length) {
     const post = state.pending[0]
-    const res = await getLikersDOM(page, post.code)
+    let res = await getLikersDOM(page, post.code)
+    // 1 retry em caso de hiccup (post carregou devagar -> sem_dialog/0 curtidores)
+    if (!res.rateLimited && (!res.users || !res.users.length) && res.error === 'sem_dialog') {
+      await sleep(rand(3000, 5000))
+      res = await getLikersDOM(page, post.code)
+    }
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
     if (res.users) for (const u of res.users) state.contagem[u] = (state.contagem[u] || 0) + 1
     state.done.push(post.pk); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
