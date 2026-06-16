@@ -48,13 +48,18 @@ try {
   Set-EnvVal "IG_PERFIL"        "depjorgefelippeneto"
   if (-not (Get-EnvVal "IG_NUM_POSTS")) { Set-EnvVal "IG_NUM_POSTS" "12" }
 
-  $syncDir = Join-Path (Split-Path $PSScriptRoot -Parent) "bond-sync"
-  Set-EnvVal "LIKERS_OUT_DIR" $syncDir
-  if (-not (Test-Path $syncDir)) {
-    Write-Host "AVISO: a pasta sincronizada ainda nao existe:" -ForegroundColor Yellow
-    Write-Host "   $syncDir" -ForegroundColor Yellow
-    Write-Host "   (aceite a pasta 'bond-sync' no Syncthing apontando pra esse caminho. O script continua e cria a pasta tambem.)" -ForegroundColor Yellow
+  # Pasta SINCRONIZADA do Syncthing (separada do repo!). Pergunta se nao existir.
+  $syncDir = Get-EnvVal "LIKERS_OUT_DIR"
+  if ((-not $syncDir) -or (-not (Test-Path $syncDir))) {
+    $padrao = Join-Path (Split-Path $PSScriptRoot -Parent) "bond-sync"
+    Write-Host "Qual o caminho da pasta 'bond-sync' que voce aceitou no Syncthing?" -ForegroundColor Yellow
+    Write-Host "(NAO use a pasta do repo C:\jfn\Bond - tem que ser uma pasta separada)" -ForegroundColor DarkYellow
+    $resp = Read-Host "Caminho (Enter = $padrao)"
+    if ([string]::IsNullOrWhiteSpace($resp)) { $syncDir = $padrao } else { $syncDir = $resp.Trim().Trim('"') }
+    Set-EnvVal "LIKERS_OUT_DIR" $syncDir
   }
+  if (-not (Test-Path $syncDir)) { New-Item -ItemType Directory -Path $syncDir -Force | Out-Null }
+  Write-Host "Saida (Syncthing): $syncDir" -ForegroundColor DarkGray
 
   # 4) Cookie (pede so se faltar)
   if (-not (Get-EnvVal "IG_SESSIONID")) { Set-EnvVal "IG_SESSIONID" (Read-Host "Cole o sessionid do Instagram") }
