@@ -117,18 +117,52 @@ async function getLikers(page, pid) {
   } catch { return { error: 'parse' } }
 }
 
-// MÉTODO ROBUSTO: lê os curtidores DIRETO do DOM do modal "liked_by".
-// Imune a endpoint REST morto / mudanca de doc_id. É o que um humano ve.
-const NAO_USER = new Set(['explore', 'reels', 'reel', 'direct', 'accounts', 'p', 'stories', 'about', 'legal', 'privacy', 'tv'])
+// MÉTODO ROBUSTO: a propria pagina (autenticada) dispara o /graphql/query de
+// curtidores quando abrimos o modal "liked_by" — nos ESCUTAMOS a resposta JSON
+// e lemos os usernames. Fallback: scrape do DOM do modal. Imune a endpoint REST
+// morto e nao precisa forjar tokens (fb_dtsg/lsd) do GraphQL.
+const NAO_USER = new Set(['explore', 'reels', 'reel', 'direct', 'accounts', 'p', 'stories', 'about', 'legal', 'privacy', 'tv', 'emails'])
+function coletarUsernames(json, sink) {
+  const pilha = [json]
+  while (pilha.length) {
+    const n = pilha.pop()
+    if (n && typeof n === 'object') {
+      if (typeof n.username === 'string' && n.username) sink.add(n.username)
+      for (const k in n) { const v = n[k]; if (v && typeof v === 'object') pilha.push(v) }
+    }
+  }
+}
 async function getLikersDOM(page, code) {
   if (!code) return { error: 'sem_code' }
-  await page.goto(`https://www.instagram.com/p/${code}/liked_by/`, { waitUntil: 'domcontentloaded' })
-  try { await page.waitForSelector('div[role="dialog"] a[href^="/"]', { timeout: 9000 }) }
-  catch { return { error: 'sem_dialog' } }
-  const seen = new Set()
+  const viaApi = new Set()
+  let capturas = 0
+  const onResp = async (resp) => {
+    const u = resp.url()
+    if (!/graphql\/query|\/likers\b|liked_by/i.test(u)) return
+    const ct = resp.headers()['content-type'] || ''
+    if (!ct.includes('json')) return
+    try { const j = await resp.json(); capturas++; coletarUsernames(j, viaApi) } catch {}
+  }
+  // 1) carrega o post e deixa os requests do post (comentarios etc) acontecerem
+  //    ANTES de comecar a escutar — assim o que capturamos depois e dos curtidores.
+  await page.goto(`https://www.instagram.com/p/${code}/`, { waitUntil: 'domcontentloaded' })
+  await page.waitForTimeout(rand(2500, 4000))
+  // 2) AGORA escuta e abre os curtidores (clique no link de curtidas, como no sniffer)
+  page.on('response', onResp)
+  let abriu = false
+  try {
+    const link = await page.$('a[href*="liked_by"]')
+    if (link) { await link.click().catch(() => {}); abriu = true }
+  } catch {}
+  if (!abriu) { try { await page.goto(`https://www.instagram.com/p/${code}/liked_by/`, { waitUntil: 'domcontentloaded' }) } catch {} }
+  await page.waitForTimeout(rand(2500, 3800))
+  // 3) rola o modal/lista pra paginar (dispara mais /graphql/query) e coleta DOM
+  const viaDom = new Set()
   let prev = -1, estavel = 0
-  for (let i = 0; i < 80 && estavel < 3; i++) {
-    const users = await page.evaluate(() => {
+  for (let i = 0; i < 80 && estavel < 4; i++) {
+    // SO raspa dentro do modal (role=dialog) — nunca a pagina inteira (evita
+    // pegar dono/comentaristas). Se nao ha modal, viaDom fica vazio e usamos a API.
+    const domU = await page.evaluate(() => {
       const dlg = document.querySelector('div[role="dialog"]')
       if (!dlg) return []
       const out = []
@@ -137,18 +171,26 @@ async function getLikersDOM(page, code) {
         if (m) out.push(m[1])
       }
       return out
-    })
-    users.forEach((u) => { if (!NAO_USER.has(u)) seen.add(u) })
+    }).catch(() => [])
+    domU.forEach((x) => { if (!NAO_USER.has(x)) viaDom.add(x) })
     await page.evaluate(() => {
       const dlg = document.querySelector('div[role="dialog"]')
-      if (!dlg) return
-      const sc = [...dlg.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 60)
+      const sc = dlg && [...dlg.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 60)
       if (sc) sc.scrollTop = sc.scrollHeight
-    })
+    }).catch(() => {})
     await page.waitForTimeout(rand(1100, 2100))
-    if (seen.size === prev) estavel++; else { estavel = 0; prev = seen.size }
+    const tot = viaApi.size + viaDom.size
+    if (tot === prev) estavel++; else { estavel = 0; prev = tot }
   }
-  return { users: [...seen] }
+  page.off('response', onResp)
+  // Prioriza o modal (limpo). So cai pra API (escutada APOS abrir os curtidores)
+  // se o modal nao renderizou.
+  let fonte = 'dom', base = viaDom
+  if (!viaDom.size && viaApi.size) { fonte = 'api', base = viaApi }
+  const todos = new Set(base); NAO_USER.forEach((x) => todos.delete(x))
+  if (process.env.IG_DEBUG === 'true') console.log(`    [fonte=${fonte} DOM=${viaDom.size} API=${viaApi.size} graphqlCaps=${capturas}]`)
+  if (!todos.size) return { error: 'sem_dialog' }
+  return { users: [...todos] }
 }
 
 async function main() {
