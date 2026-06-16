@@ -32,6 +32,9 @@ const HELP = [
   '/redes — conectar Twitter / Facebook / Instagram',
   '/senha — trocar a senha de admin',
   '/status — o app está no ar? (dados ao vivo)',
+  '/curtidores — top de quem mais curtiu',
+  '/posts — top posts (curtidas/comentários)',
+  '/resumo — resumo dos últimos 7 dias',
   '/ajuda — esta lista',
 ].join('\n')
 
@@ -181,6 +184,57 @@ async function tratarTokenFacebook(chatId: string, userToken: string) {
   exec('bash -lc "pm2 restart politimonitor bond-worker --update-env"', () => {})
 }
 
+// ─────────── Comandos de DADOS (controlar o monitor pelo Telegram) ───────────
+async function cmdCurtidores(chatId: string) {
+  const top = await prisma.bondFa.findMany({ where: { plataforma: 'instagram', totalLikes: { gt: 0 } }, orderBy: { totalLikes: 'desc' }, take: 15 })
+  if (!top.length) { await bot.sendMessage(chatId, '❤️ Ainda não importei curtidores. Rode a captura no desktop (bond-likers.ps1).'); return }
+  const linhas = top.map((f, i) => `${i + 1}. *${f.username ?? f.nome}* — ${f.totalLikes}`).join('\n')
+  await bot.sendMessage(chatId, `❤️ *Top curtidores*\n\n${linhas}\n\nRanking completo: /curtidores no painel.`, { parse_mode: 'Markdown' })
+}
+async function cmdPosts(chatId: string) {
+  const posts = await prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, orderBy: { likes: 'desc' }, take: 8 })
+  if (!posts.length) { await bot.sendMessage(chatId, 'Nenhum post sincronizado ainda.'); return }
+  const ini = (t: string) => { const s = (t || '').replace(/\s+/g, ' ').trim(); return s.length > 55 ? s.slice(0, 55) + '…' : (s || '(sem legenda)') }
+  const d = (x: Date) => new Date(x).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })
+  const linhas = posts.map((p, i) => `${i + 1}. *${p.likes}❤️ ${p.comentarios}💬* (${d(p.publicadoEm)})\n   _${ini(p.conteudo)}_`).join('\n')
+  await bot.sendMessage(chatId, `🏆 *Top posts*\n\n${linhas}`, { parse_mode: 'Markdown' })
+}
+async function cmdResumo(chatId: string) {
+  const desde = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  const posts = await prisma.bondPost.findMany({ where: { publicadoEm: { gte: desde } }, orderBy: { likes: 'desc' } })
+  const tl = posts.reduce((s, p) => s + (p.likes || 0), 0), tc = posts.reduce((s, p) => s + (p.comentarios || 0), 0)
+  const ini = (t: string) => { const s = (t || '').replace(/\s+/g, ' ').trim(); return s.length > 50 ? s.slice(0, 50) + '…' : s }
+  const top = posts.slice(0, 5).map((p, i) => `${i + 1}. ${p.likes}❤️ ${p.comentarios}💬 — _${ini(p.conteudo)}_`).join('\n')
+  await bot.sendMessage(chatId, `📊 *Resumo (7 dias)*\nPosts: *${posts.length}* · ❤️ *${tl.toLocaleString('pt-BR')}* · 💬 *${tc.toLocaleString('pt-BR')}*\n\n🏆 Top:\n${top || '(sem posts novos)'}`, { parse_mode: 'Markdown' })
+}
+
+// Menu de botões "vivos" (tappáveis) no Telegram.
+const MENU_KB = {
+  inline_keyboard: [
+    [{ text: '❤️ Curtidores', callback_data: 'curtidores' }, { text: '🏆 Posts', callback_data: 'posts' }],
+    [{ text: '📊 Resumo 7d', callback_data: 'resumo' }, { text: '📡 Status', callback_data: 'status' }],
+    [{ text: '🔗 Conectar redes', callback_data: 'redes' }, { text: '🔓 Acesso', callback_data: 'acesso' }],
+    [{ text: '📖 Ajuda', callback_data: 'ajuda' }],
+  ],
+}
+async function enviarMenu(chatId: string) {
+  await bot.sendMessage(chatId, '🎛️ *Menu do Bond* — toque numa opção:', { parse_mode: 'Markdown', reply_markup: MENU_KB })
+}
+// Cliques nos botões do menu
+bot.on('callback_query', async (q) => {
+  const chatId = String(q.message?.chat.id ?? '')
+  try { await bot.answerCallbackQuery(q.id) } catch {}
+  if (OWNER_ID === '' || String(q.from.id) !== OWNER_ID) return
+  try {
+    const d = q.data
+    if (d === 'curtidores') await cmdCurtidores(chatId)
+    else if (d === 'posts') await cmdPosts(chatId)
+    else if (d === 'resumo') await cmdResumo(chatId)
+    else if (d === 'status') await statusAoVivo(chatId)
+    else if (d && TXT['/' + d]) await bot.sendMessage(chatId, TXT['/' + d], { parse_mode: 'Markdown', disable_web_page_preview: true })
+  } catch (err) { console.error('Erro no menu:', err) }
+})
+
 const isOwner = (msg: TelegramBot.Message) =>
   OWNER_ID !== '' && String(msg.from?.id ?? '') === OWNER_ID
 
@@ -224,10 +278,11 @@ bot.on('message', async (msg) => {
   if (text.startsWith('/') && isOwner(msg)) {
     const cmd = text.split(/\s+/)[0].toLowerCase()
     try {
-      if (cmd === '/status') {
-        await statusAoVivo(chatId)
-        return
-      }
+      if (cmd === '/menu' || cmd === '/start') { await enviarMenu(chatId); return }
+      if (cmd === '/status') { await statusAoVivo(chatId); return }
+      if (cmd === '/curtidores') { await cmdCurtidores(chatId); return }
+      if (cmd === '/posts') { await cmdPosts(chatId); return }
+      if (cmd === '/resumo') { await cmdResumo(chatId); return }
       const reply = TXT[cmd] ?? 'Comando não reconhecido. Use /ajuda para ver a lista.'
       await bot.sendMessage(chatId, reply, { parse_mode: 'Markdown', disable_web_page_preview: true })
     } catch (err) {
@@ -270,12 +325,16 @@ async function registrarComandos() {
   try {
     await bot.setMyCommands(
       [
+        { command: 'menu', description: '🎛️ Menu com botões' },
         { command: 'acesso', description: 'Como entrar no painel' },
         { command: 'painel', description: 'O que tem em cada tela' },
         { command: 'whatsapp', description: 'Conectar o WhatsApp (QR)' },
         { command: 'redes', description: 'Conectar Twitter/Facebook/Instagram' },
         { command: 'senha', description: 'Trocar a senha de admin' },
         { command: 'status', description: 'O app está no ar? (ao vivo)' },
+        { command: 'curtidores', description: 'Top de quem mais curtiu' },
+        { command: 'posts', description: 'Top posts' },
+        { command: 'resumo', description: 'Resumo dos últimos 7 dias' },
         { command: 'ajuda', description: 'Lista de comandos' },
       ],
       { scope: { type: 'chat', chat_id: Number(OWNER_ID) } },
