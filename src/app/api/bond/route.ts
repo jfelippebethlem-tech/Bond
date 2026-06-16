@@ -117,6 +117,9 @@ export async function GET(req: NextRequest) {
     if (de) dateW.gte = new Date(de + 'T00:00:00')
     if (ate) dateW.lte = new Date(ate + 'T23:59:59')
     const hasDate = !!(de || ate)
+    // Filtra pela data REAL (publicadoEm = created_time FB / timestamp IG). Linhas legadas (publicadoEm null)
+    // caem de volta no criadoEm (ingest). Antes filtrava só por criadoEm → a data era ignorada (bug 06-16).
+    const dataFiltro = hasDate ? { OR: [{ publicadoEm: dateW }, { publicadoEm: null, criadoEm: dateW }] } : null
 
     type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date }
     const items: Item[] = []
@@ -126,7 +129,7 @@ export async function GET(req: NextRequest) {
       const cs = await prisma.bondComentario.findMany({
         where: {
           ...(plataforma ? { plataforma } : {}),
-          ...(hasDate ? { criadoEm: dateW } : {}),
+          ...(dataFiltro ?? {}),
           ...(pessoa ? { autor: { contains: pessoa } } : {}),
         },
         orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 500,
@@ -139,7 +142,7 @@ export async function GET(req: NextRequest) {
         where: {
           ...(plataforma ? { plataforma } : {}),
           tipo: tipoInt && tipoInt !== 'comment' ? tipoInt : { in: ['like', 'share'] },
-          ...(hasDate ? { criadoEm: dateW } : {}),
+          ...(dataFiltro ?? {}),
         },
         orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 2000,
       })
@@ -155,8 +158,8 @@ export async function GET(req: NextRequest) {
     items.sort((a, b) => +new Date(b.data) - +new Date(a.data))
 
     // Stats PRECISOS (contagem real, não limitada pelo take das listas acima)
-    const comW = { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { criadoEm: dateW } : {}), ...(pessoa ? { autor: { contains: pessoa } } : {}) }
-    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(hasDate ? { criadoEm: dateW } : {}) })
+    const comW = { ...(plataforma ? { plataforma } : {}), ...(dataFiltro ?? {}), ...(pessoa ? { autor: { contains: pessoa } } : {}) }
+    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(dataFiltro ?? {}) })
     const [nComment, nLike, nShare] = await Promise.all([
       !tipoInt || tipoInt === 'comment' ? prisma.bondComentario.count({ where: comW }) : Promise.resolve(0),
       !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),

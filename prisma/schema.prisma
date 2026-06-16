@@ -196,7 +196,8 @@ model BondInteracao {
   externalId String
   tipo       String   // "like" | "comment" | "share"
   postId     String
-  criadoEm  DateTime @default(now())
+  publicadoEm DateTime?  // data REAL da interação quando a API fornece (ex.: comentário); null = usa criadoEm
+  criadoEm  DateTime @default(now())   // hora da INGESTÃO/sync
 
   @@unique([plataforma, externalId, tipo, postId])
 }
@@ -212,7 +213,8 @@ model BondComentario {
   respondido    Boolean  @default(false)
   sugestaoIA    String?
   respostaFinal String?
-  criadoEm     DateTime @default(now())
+  publicadoEm   DateTime?  // data REAL do comentário (created_time FB / timestamp IG); null = legado → usa criadoEm
+  criadoEm     DateTime @default(now())   // hora da INGESTÃO/sync (NÃO é a data real do comentário)
 
   @@unique([plataforma, comentarioId])
 }
