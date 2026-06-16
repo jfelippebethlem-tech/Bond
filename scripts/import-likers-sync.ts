@@ -10,9 +10,33 @@ import { PrismaClient } from '@prisma/client'
 const prisma = new PrismaClient()
 const ARQ = process.env.LIKERS_SYNC_FILE || path.join(os.homedir(), 'likers-sync', 'likers.json')
 const MARCA = path.join(os.homedir(), '.likers_imported') // fora da pasta sincronizada (receiveonly)
+const STATUS = path.join(os.homedir(), 'likers-sync', 'likers-status.json')
+const STATUS_MARCA = path.join(os.homedir(), '.likers_status_avisado')
+
+// Lê o status da captura (escrito pelo desktop) e AVISA no Telegram se precisar logar.
+async function checarStatusEAvisar() {
+  if (!fs.existsSync(STATUS)) return
+  let st: { ok?: boolean; erro?: string; quando?: string }
+  try { st = JSON.parse(fs.readFileSync(STATUS, 'utf8')) } catch { return }
+  if (st.ok) return
+  const chave = `${st.quando}|${st.erro}`
+  const ultimo = fs.existsSync(STATUS_MARCA) ? fs.readFileSync(STATUS_MARCA, 'utf8').trim() : ''
+  if (chave === ultimo) return // já avisei desse evento
+  const tok = process.env.TELEGRAM_BOT_TOKEN, owner = process.env.TELEGRAM_OWNER_ID
+  if (!tok || !owner) return
+  const msg = st.erro === 'precisa_login' || st.erro === 'sem_posts_ou_sessao_invalida'
+    ? '⚠️ A captura de curtidores precisa que você LOGUE de novo no Instagram (no perfil dedicado do desktop). Abra C:\\jfn\\bond e rode bond-likers.ps1 — a janela abre, você loga (2FA) e pronto. Depois disso volta a rodar sozinho toda sexta.'
+    : `⚠️ A captura de curtidores teve um problema: ${st.erro}. Confira o desktop (bond-likers-log.txt).`
+  try {
+    await fetch(`https://api.telegram.org/bot${tok}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: owner, text: msg }) })
+    fs.writeFileSync(STATUS_MARCA, chave)
+    console.log(`[${new Date().toISOString()}] avisei no Telegram: ${st.erro}`)
+  } catch { /* rede */ }
+}
 
 async function main() {
-  if (!fs.existsSync(ARQ)) { console.log(`[${new Date().toISOString()}] sem ${ARQ} ainda`); return }
+  await checarStatusEAvisar()
+  if (!fs.existsSync(ARQ)) { return }
   const mtime = fs.statSync(ARQ).mtimeMs.toString()
   const ultimo = fs.existsSync(MARCA) ? fs.readFileSync(MARCA, 'utf8').trim() : ''
   if (mtime === ultimo) { return } // nada novo
