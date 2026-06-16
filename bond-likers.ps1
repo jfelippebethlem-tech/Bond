@@ -10,6 +10,7 @@
 #  RODA SÓ NO SEU COMPUTADOR (IP residencial). Nunca na VM. Sem senhas no arquivo.
 #  Se algo der errado, NÃO fecha sozinho e grava tudo em bond-likers-log.txt
 # ============================================================================
+param([switch]$Scheduled)  # -Scheduled = execucao automatica (agendador), nao pausa no fim
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 try { Start-Transcript -Path (Join-Path $PSScriptRoot "bond-likers-log.txt") -Force | Out-Null } catch {}
@@ -51,10 +52,11 @@ try {
   # Pasta SINCRONIZADA do Syncthing (separada do repo!). Pergunta se nao existir.
   $syncDir = Get-EnvVal "LIKERS_OUT_DIR"
   if ((-not $syncDir) -or (-not (Test-Path $syncDir))) {
-    $padrao = Join-Path (Split-Path $PSScriptRoot -Parent) "bond-sync"
-    Write-Host "Qual o caminho da pasta 'bond-sync' que voce aceitou no Syncthing?" -ForegroundColor Yellow
-    Write-Host "(NAO use a pasta do repo C:\jfn\Bond - tem que ser uma pasta separada)" -ForegroundColor DarkYellow
-    $resp = Read-Host "Caminho (Enter = $padrao)"
+    $padrao = Join-Path (Split-Path $PSScriptRoot -Parent) "likers-sync"
+    if ($Scheduled) { $syncDir = $padrao; Set-EnvVal "LIKERS_OUT_DIR" $syncDir }
+    Write-Host "Qual o caminho da pasta 'likers-sync' que voce aceitou no Syncthing?" -ForegroundColor Yellow
+    Write-Host "(NAO use a pasta do repo - tem que ser uma pasta separada)" -ForegroundColor DarkYellow
+    $resp = if ($Scheduled) { "" } else { Read-Host "Caminho (Enter = $padrao)" }
     if ([string]::IsNullOrWhiteSpace($resp)) { $syncDir = $padrao } else { $syncDir = $resp.Trim().Trim('"') }
     Set-EnvVal "LIKERS_OUT_DIR" $syncDir
   }
@@ -65,6 +67,19 @@ try {
   if (-not (Get-EnvVal "IG_SESSIONID")) { Set-EnvVal "IG_SESSIONID" (Read-Host "Cole o sessionid do Instagram") }
   if (-not (Get-EnvVal "IG_DS_USER_ID")){ Set-EnvVal "IG_DS_USER_ID" (Read-Host "Cole o ds_user_id") }
   if (-not (Get-EnvVal "IG_CSRFTOKEN")) { Set-EnvVal "IG_CSRFTOKEN" (Read-Host "Cole o csrftoken") }
+
+  # 4.5) Auto-agendamento: toda SEXTA as 9h (registra UMA vez; roda sozinho depois)
+  if (-not $Scheduled) {
+    $taskName = "BondLikersSemanal"
+    if (-not (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue)) {
+      try {
+        $act = New-ScheduledTaskAction -Execute "powershell.exe" -Argument ("-ExecutionPolicy Bypass -WindowStyle Hidden -File `"" + $PSCommandPath + "`" -Scheduled")
+        $trg = New-ScheduledTaskTrigger -Weekly -DaysOfWeek Friday -At 9am
+        Register-ScheduledTask -TaskName $taskName -Action $act -Trigger $trg -Description "Bond: captura semanal de curtidores" -Force | Out-Null
+        Write-Host "Agendado: roda sozinho toda SEXTA as 9h. (tarefa '$taskName')" -ForegroundColor Green
+      } catch { Write-Host "Nao consegui agendar automaticamente: $($_.Exception.Message)" -ForegroundColor Yellow }
+    } else { Write-Host "Ja agendado (toda sexta as 9h)." -ForegroundColor DarkGray }
+  }
 
   # 5) Dependencias (so na 1a vez). ErrorActionPreference=Continue p/ avisos do
   #    npm (stderr) NAO matarem o script — checamos so o codigo de saida.
@@ -96,6 +111,5 @@ catch {
 }
 finally {
   try { Stop-Transcript | Out-Null } catch {}
-  Write-Host ""
-  Read-Host "Pressione Enter para fechar"
+  if (-not $Scheduled) { Write-Host ""; Read-Host "Pressione Enter para fechar" }
 }

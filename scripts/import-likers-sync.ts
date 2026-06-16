@@ -8,8 +8,8 @@ import os from 'os'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
-const ARQ = process.env.LIKERS_SYNC_FILE || path.join(os.homedir(), 'bond-sync', 'likers.json')
-const MARCA = ARQ + '.imported' // guarda o mtime já importado (evita reimportar igual)
+const ARQ = process.env.LIKERS_SYNC_FILE || path.join(os.homedir(), 'likers-sync', 'likers.json')
+const MARCA = path.join(os.homedir(), '.likers_imported') // fora da pasta sincronizada (receiveonly)
 
 async function main() {
   if (!fs.existsSync(ARQ)) { console.log(`[${new Date().toISOString()}] sem ${ARQ} ainda`); return }
