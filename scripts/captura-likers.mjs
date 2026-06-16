@@ -48,10 +48,10 @@ const estaLogado = (page) => !page.url().includes('/accounts/login')
 async function getPostIds(page, dsUserId, numPosts) {
   return page.evaluate(async ({ dsUserId, numPosts }) => {
     const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
-    const headers = { 'x-ig-app-id': '936619743392459', 'x-csrftoken': csrf }
+    const headers = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
     const ids = []; let maxId = null
     while (ids.length < numPosts) {
-      let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=12`
+      let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=33`
       if (maxId) url += `&max_id=${maxId}`
       const r = await fetch(url, { headers, credentials: 'include' })
       if (!r.ok) break
@@ -67,7 +67,7 @@ async function getPostIds(page, dsUserId, numPosts) {
 async function getLikers(page, pid) {
   return page.evaluate(async ({ pid }) => {
     const csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || ''
-    const headers = { 'x-ig-app-id': '936619743392459', 'x-csrftoken': csrf }
+    const headers = { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
     const r = await fetch(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { headers, credentials: 'include' })
     if (r.status === 429) return { rateLimited: true }
     if (!r.ok) return { error: r.status }
