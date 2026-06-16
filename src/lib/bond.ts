@@ -283,7 +283,7 @@ export async function syncFacebook() {
 
 // ── Sincronização Instagram ───────────────────────────────────────────────────
 
-export async function syncInstagram() {
+export async function syncInstagram(limitPosts = 20) {
   if (!process.env.FACEBOOK_PAGE_TOKEN) return { synced: 0, error: 'Instagram não configurado' }
 
   const igId = await getInstagramAccountId()
@@ -317,7 +317,7 @@ export async function syncInstagram() {
     },
   })
 
-  const posts = await getInstagramPosts(igId, 20)
+  const posts = await getInstagramPosts(igId, limitPosts)
   let synced = 0
 
   for (const post of posts) {
