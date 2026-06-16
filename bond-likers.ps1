@@ -66,19 +66,25 @@ try {
   if (-not (Get-EnvVal "IG_DS_USER_ID")){ Set-EnvVal "IG_DS_USER_ID" (Read-Host "Cole o ds_user_id") }
   if (-not (Get-EnvVal "IG_CSRFTOKEN")) { Set-EnvVal "IG_CSRFTOKEN" (Read-Host "Cole o csrftoken") }
 
-  # 5) Dependencias (so na 1a vez)
+  # 5) Dependencias (so na 1a vez). ErrorActionPreference=Continue p/ avisos do
+  #    npm (stderr) NAO matarem o script — checamos so o codigo de saida.
   if (-not (Test-Path (Join-Path $PSScriptRoot "node_modules\playwright"))) {
     Write-Host "Instalando dependencias (uma vez, 1-2 min)..." -ForegroundColor Cyan
+    $ErrorActionPreference = "Continue"
     npm install playwright dotenv 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "npm install falhou. Veja o erro acima." }
-    npx playwright install chromium 2>&1 | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "playwright install falhou. Veja o erro acima." }
+    $rc = $LASTEXITCODE
+    if ($rc -eq 0) { npx playwright install chromium 2>&1 | Out-Host; $rc = $LASTEXITCODE }
+    $ErrorActionPreference = "Stop"
+    if ($rc -ne 0) { throw "Instalacao de dependencias falhou (codigo $rc). Veja acima." }
   }
 
-  # 6) Captura
+  # 6) Captura (idem: avisos no stderr nao devem matar)
   Write-Host "Capturando... vai abrir uma janela do Chrome - NAO mexa." -ForegroundColor Cyan
-  node scripts/captura-likers.mjs
-  if ($LASTEXITCODE -ne 0) { throw "A captura terminou com erro (codigo $LASTEXITCODE). Veja acima." }
+  $ErrorActionPreference = "Continue"
+  node scripts/captura-likers.mjs 2>&1 | Out-Host
+  $rc = $LASTEXITCODE
+  $ErrorActionPreference = "Stop"
+  if ($rc -ne 0) { throw "A captura terminou com erro (codigo $rc). Veja acima." }
 
   Write-Host ""
   Write-Host "PRONTO! Veja o ranking em: http://159.112.188.8:3000/curtidores" -ForegroundColor Green
