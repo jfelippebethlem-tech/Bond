@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guia de Permissões — Bond / PolitiMonitor</title>
+<style>
+  :root{
+    --azul:#1d4ed8;--azul-claro:#eff6ff;--verde:#15803d;--verde-claro:#f0fdf4;
+    --amarelo:#a16207;--amarelo-claro:#fffbeb;--vermelho:#b91c1c;--vermelho-claro:#fef2f2;
+    --cinza:#475569;--cinza-claro:#f8fafc;--borda:#e2e8f0;--tinta:#0f172a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:var(--tinta);background:#f1f5f9;line-height:1.55;-webkit-text-size-adjust:100%}
+  .wrap{max-width:820px;margin:0 auto;padding:0 16px 72px}
+  .capa{background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#fff;padding:38px 24px 30px;border-radius:0 0 20px 20px;margin:0 -16px 26px}
+  .capa .tag{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#93c5fd;font-weight:600}
+  .capa h1{margin:8px 0 6px;font-size:27px;line-height:1.2}
+  .capa p{margin:0;color:#cbd5e1;font-size:15px}
+  h2{font-size:20px;margin:32px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--borda)}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--azul)}
+  p,li{font-size:15px}
+  .resumo{background:var(--azul-claro);border:1px solid #bfdbfe;border-radius:14px;padding:16px 18px;margin-bottom:24px}
+  .niveis{display:flex;gap:12px;flex-wrap:wrap;margin:16px 0}
+  .nivel{flex:1;min-width:230px;border-radius:14px;padding:16px;border:1px solid var(--borda);background:#fff}
+  .nivel.ok{background:var(--verde-claro);border-color:#bbf7d0}
+  .nivel.dif{background:var(--amarelo-claro);border-color:#fde68a}
+  .nivel h4{margin:0 0 6px;font-size:15px}
+  .nivel .selo{font-size:12px;font-weight:700;padding:3px 9px;border-radius:999px;display:inline-block;margin-bottom:8px}
+  .selo.v{background:#16a34a;color:#fff}.selo.a{background:#d97706;color:#fff}
+  .passo{display:flex;gap:14px;margin:0 0 14px;align-items:flex-start}
+  .num{flex:0 0 30px;width:30px;height:30px;border-radius:50%;background:var(--azul);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;margin-top:1px}
+  .corpo{flex:1;min-width:0}
+  .dica{font-size:13.5px;color:var(--cinza);background:var(--cinza-claro);border-left:3px solid #cbd5e1;padding:7px 12px;border-radius:0 8px 8px 0;margin-top:7px}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:14px;background:#fff;border-radius:10px;overflow:hidden;border:1px solid var(--borda)}
+  th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--borda)}
+  th{background:#0f172a;color:#fff;font-size:13px}
+  tr:last-child td{border-bottom:0}
+  .tag2{font-size:11px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+  .t-ok{background:#dcfce7;color:#15803d}.t-med{background:#fef9c3;color:#a16207}.t-dif{background:#fee2e2;color:#b91c1c}
+  code{background:#e2e8f0;padding:1px 6px;border-radius:5px;font-size:.9em;font-family:ui-monospace,monospace}
+  .box{border-radius:14px;padding:16px 18px;margin:18px 0;font-size:14.5px}
+  .box.aviso{background:var(--amarelo-claro);border:1px solid #fde68a}
+  .box.dica2{background:var(--verde-claro);border:1px solid #bbf7d0}
+  .rodape{text-align:center;color:#94a3b8;font-size:13px;margin-top:36px;padding-top:18px;border-top:1px solid var(--borda)}
+  a{color:var(--azul)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="capa">
+    <div class="tag">PolitiMonitor · Bond</div>
+    <h1>Guia de Permissões da Meta</h1>
+    <p>De monitorar a gerenciar tudo pelo Bond — o caminho completo.</p>
+  </div>
+
+  <div class="resumo">
+    🎯 <b>O objetivo final:</b> gerenciar Facebook e Instagram pelo Bond (ler, responder, publicar,
+    mensagens). Existem <b>dois níveis</b> — um já está pronto; o outro exige um processo da Meta.
+  </div>
+
+  <div class="niveis">
+    <div class="nivel ok">
+      <span class="selo v">✅ JÁ TEMOS</span>
+      <h4>Nível 1 — Monitorar (ler)</h4>
+      Ler comentários, curtidas (total) e perfis. Funciona em <b>Modo de Desenvolvimento</b>, sem
+      App Review, sem custo. <b>Já está ativo.</b>
+    </div>
+    <div class="nivel dif">
+      <span class="selo a">⚙️ PRECISA PROCESSO</span>
+      <h4>Nível 2 — Gerenciar (agir)</h4>
+      Publicar posts, responder comentários e mensagens <b>de forma pública</b>. Exige
+      <b>Verificação de Negócio</b> + <b>App Review</b> por permissão.
+    </div>
+  </div>
+
+  <h2>As permissões e o que cada uma libera</h2>
+  <table>
+    <tr><th>Permissão</th><th>Libera</th><th>Nível</th></tr>
+    <tr><td><code>pages_read_engagement</code><br><code>pages_read_user_content</code></td><td>Ler comentários e engajamento da Página</td><td><span class="tag2 t-ok">PRONTO</span></td></tr>
+    <tr><td><code>instagram_basic</code><br><code>instagram_manage_comments</code></td><td>Ler perfil/posts do IG e <b>responder comentários</b></td><td><span class="tag2 t-ok">PRONTO</span></td></tr>
+    <tr><td><code>business_management</code></td><td>Acessar ativos do Business</td><td><span class="tag2 t-ok">PRONTO</span></td></tr>
+    <tr><td><code>instagram_manage_insights</code><br><code>read_insights</code></td><td>Métricas avançadas (alcance, impressões)</td><td><span class="tag2 t-med">MÉDIO</span></td></tr>
+    <tr><td><code>pages_manage_engagement</code></td><td>Curtir/comentar/reagir <b>como a Página</b></td><td><span class="tag2 t-med">MÉDIO</span></td></tr>
+    <tr><td><code>pages_manage_posts</code><br><code>instagram_content_publish</code></td><td><b>Publicar</b> posts no FB e IG pelo Bond</td><td><span class="tag2 t-dif">DIFÍCIL</span></td></tr>
+    <tr><td><code>pages_messaging</code><br><code>instagram_manage_messages</code></td><td>Responder <b>DMs</b> (Direct / Messenger)</td><td><span class="tag2 t-dif">DIFÍCIL</span></td></tr>
+    <tr><td><code>pages_manage_metadata</code></td><td>Webhooks e configurações da Página</td><td><span class="tag2 t-med">MÉDIO</span></td></tr>
+  </table>
+
+  <h2>ETAPA 1 — Verificação de Negócio (o portão principal)</h2>
+  <p>É o que destrava o <b>Acesso Avançado</b> da maioria das permissões. Feito uma vez.</p>
+
+  <div class="passo"><div class="num">1</div><div class="corpo">
+    Acesse <b>business.facebook.com</b> → <b>Configurações do Negócio</b> (Business Settings).
+  </div></div>
+  <div class="passo"><div class="num">2</div><div class="corpo">
+    No menu, vá em <b>Central de Segurança</b> (Security Center) → <b>Iniciar verificação</b>.
+  </div></div>
+  <div class="passo"><div class="num">3</div><div class="corpo">
+    Informe os dados do <b>gabinete/entidade</b>: razão social, <b>CNPJ</b>, endereço e telefone.
+    <div class="dica">Use os dados oficiais do mandato. Eles precisam bater com o documento.</div>
+  </div></div>
+  <div class="passo"><div class="num">4</div><div class="corpo">
+    Envie <b>um documento</b> que comprove o negócio: cartão CNPJ, contrato social, ou conta de
+    serviço (água/luz/telefone) em nome da entidade.
+  </div></div>
+  <div class="passo"><div class="num">5</div><div class="corpo">
+    Confirme o contato (e-mail/telefone) e envie. <b>Prazo: 1 a 3 dias úteis</b> (às vezes mais).
+    Você recebe a resposta por e-mail e no painel.
+  </div></div>
+
+  <div class="box aviso">
+    ⚠️ Sem a Verificação de Negócio, as permissões de <b>publicar</b> e <b>mensagens</b> ficam só
+    em "Acesso Padrão" (funcionam apenas para admins do app, não para o público).
+  </div>
+
+  <h2>ETAPA 2 — Acesso Avançado (App Review), permissão por permissão</h2>
+  <p>Depois da verificação, cada permissão do Nível 2 é solicitada e revisada pela Meta.</p>
+
+  <div class="passo"><div class="num">1</div><div class="corpo">
+    No painel do app → <b>Análise do app</b> → <b>Permissões e recursos</b>
+    (App Review → Permissions and Features).
+  </div></div>
+  <div class="passo"><div class="num">2</div><div class="corpo">
+    Ache a permissão (ex.: <code>instagram_content_publish</code>) e clique em
+    <b>"Solicitar acesso avançado"</b>.
+  </div></div>
+  <div class="passo"><div class="num">3</div><div class="corpo">
+    Preencha o formulário: <b>descreva como o Bond usa</b> a permissão e <b>grave um vídeo</b>
+    (screencast) mostrando o passo a passo dentro do app.
+    <div class="dica">O vídeo é o que mais reprova/aprova. Mostre o login, onde a função aparece, e o resultado real.</div>
+  </div></div>
+  <div class="passo"><div class="num">4</div><div class="corpo">
+    O app precisa estar em <b>Modo Ativo (Live)</b> e ter <b>Política de Privacidade</b> e
+    <b>Exclusão de Dados</b> preenchidas (já temos — hospedadas no GitHub Pages).
+  </div></div>
+  <div class="passo"><div class="num">5</div><div class="corpo">
+    Envie. <b>Prazo: ~2 a 4 semanas por permissão.</b> Dá pra enviar várias juntas.
+  </div></div>
+
+  <div class="box dica2">
+    💡 <b>Estratégia recomendada (por etapas):</b><br>
+    1) <b>Agora:</b> monitorar (pronto) — sem fazer nada.<br>
+    2) <b>Curto prazo:</b> fazer a <b>Verificação de Negócio</b> (destrava tudo) + pedir
+    <code>instagram_manage_insights</code> (alcance/impressões — útil e fácil).<br>
+    3) <b>Depois:</b> pedir <b>responder comentários</b> (<code>pages_manage_engagement</code>) — o
+    recurso mais útil no dia a dia do gabinete.<br>
+    4) <b>Por último:</b> <b>publicar</b> e <b>mensagens</b> — os mais trabalhosos no review.
+  </div>
+
+  <h2>Pré-requisitos (já atendidos ✅)</h2>
+  <ul>
+    <li>Conta Instagram <b>Business</b> vinculada à Página ✅</li>
+    <li>App "JFN Monitor e Ideia" configurado ✅</li>
+    <li>Política de Privacidade, Termos e Exclusão de Dados (HTTPS) ✅</li>
+    <li>Token permanente da Página ✅</li>
+  </ul>
+
+  <div class="rodape">
+    Guia do PolitiMonitor / Bond · dúvidas em qualquer etapa? Manda um print no bot que eu te guio. 📲
+  </div>
+
+</div>
+</body>
+</html>
