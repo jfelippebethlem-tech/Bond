@@ -145,11 +145,21 @@ export async function GET(req: NextRequest) {
       !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),
       !tipoInt || tipoInt === 'share' ? prisma.bondInteracao.count({ where: intW('share') }) : Promise.resolve(0),
     ])
-    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare }
+    // Curtidas AGREGADAS dos posts: o IG não revela QUEM curtiu, mas dá o total por post.
+    const aggLikes = await prisma.bondPost.aggregate({
+      _sum: { likes: true },
+      where: { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { publicadoEm: dateW } : {}) },
+    })
+    const curtidasPostagens = aggLikes._sum.likes ?? 0
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens }
 
     if (agrupar === 'pessoa') {
+      // Exclui as contas do PRÓPRIO mandato (respostas do dono não são "interação de apoiador").
+      const perfisDono = await prisma.bondPerfil.findMany({ select: { handle: true } })
+      const donoHandles = new Set(perfisDono.map((p) => (p.handle || '').toLowerCase()).filter(Boolean))
       const byP = new Map<string, { pessoa: string; total: number; like: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
       for (const it of items) {
+        if (donoHandles.has((it.pessoa || '').toLowerCase())) continue
         const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
         e.total++
         if (it.tipo === 'like') e.like++; else if (it.tipo === 'comment') e.comment++; else if (it.tipo === 'share') e.share++
