@@ -136,19 +136,22 @@ async function getLikersDOM(page, code) {
   if (!code) return { error: 'sem_code' }
   const viaApi = new Set()
   let capturas = 0
+  let escutandoLikers = false // so coleta DEPOIS de abrir o modal (evita comentaristas)
   const onResp = async (resp) => {
+    if (!escutandoLikers) return
     const u = resp.url()
     if (!/graphql\/query|\/likers\b|liked_by/i.test(u)) return
     const ct = resp.headers()['content-type'] || ''
     if (!ct.includes('json')) return
     try { const j = await resp.json(); capturas++; coletarUsernames(j, viaApi) } catch {}
   }
-  // 1) carrega o post e deixa os requests do post (comentarios etc) acontecerem
-  //    ANTES de comecar a escutar — assim o que capturamos depois e dos curtidores.
+  // 1) Listener anexado ANTES do goto (como no sniffer #3, que capturou o GraphQL).
+  //    Na #5 o listener foi anexado depois do goto e nao capturou nada.
+  page.on('response', onResp)
   await page.goto(`https://www.instagram.com/p/${code}/`, { waitUntil: 'domcontentloaded' })
   await page.waitForTimeout(rand(2500, 4000))
-  // 2) AGORA escuta e abre os curtidores (clique no link de curtidas, como no sniffer)
-  page.on('response', onResp)
+  // 2) Liga a coleta e abre os curtidores (clique no link de curtidas, como no sniffer)
+  escutandoLikers = true
   let abriu = false
   try {
     const link = await page.$('a[href*="liked_by"]')
