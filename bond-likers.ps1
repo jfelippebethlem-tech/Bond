@@ -63,10 +63,9 @@ try {
   if (-not (Test-Path $syncDir)) { New-Item -ItemType Directory -Path $syncDir -Force | Out-Null }
   Write-Host "Saida (Syncthing): $syncDir" -ForegroundColor DarkGray
 
-  # 4) Cookie (pede so se faltar)
-  if (-not (Get-EnvVal "IG_SESSIONID")) { Set-EnvVal "IG_SESSIONID" (Read-Host "Cole o sessionid do Instagram") }
-  if (-not (Get-EnvVal "IG_DS_USER_ID")){ Set-EnvVal "IG_DS_USER_ID" (Read-Host "Cole o ds_user_id") }
-  if (-not (Get-EnvVal "IG_CSRFTOKEN")) { Set-EnvVal "IG_CSRFTOKEN" (Read-Host "Cole o csrftoken") }
+  # 4) Perfil de navegador DEDICADO (sem copiar cookie). Voce loga 1x na janela.
+  $perfilDir = Join-Path (Split-Path $PSScriptRoot -Parent) "ig-profile"
+  Set-EnvVal "IG_PROFILE_DIR" $perfilDir
 
   # 4.5) Auto-agendamento: toda SEXTA as 9h (registra UMA vez; roda sozinho depois)
   if (-not $Scheduled) {
@@ -93,8 +92,9 @@ try {
     if ($rc -ne 0) { throw "Instalacao de dependencias falhou (codigo $rc). Veja acima." }
   }
 
-  # 6) Captura (idem: avisos no stderr nao devem matar)
-  Write-Host "Capturando... vai abrir uma janela do Chrome - NAO mexa." -ForegroundColor Cyan
+  # 6) Captura. Interativo = voce pode logar na janela; agendado = nao espera login.
+  if ($Scheduled) { $env:IG_INTERACTIVE = "false" } else { $env:IG_INTERACTIVE = "true" }
+  Write-Host "Abrindo o Instagram... Se pedir LOGIN, faca o login na janela (com 2FA). Senao, so aguarde." -ForegroundColor Cyan
   $ErrorActionPreference = "Continue"
   node scripts/captura-likers.mjs 2>&1 | Out-Host
   $rc = $LASTEXITCODE
