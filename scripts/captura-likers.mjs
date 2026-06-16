@@ -43,7 +43,15 @@ async function dsUserIdDo(ctx) {
   const cookies = await ctx.cookies('https://www.instagram.com')
   return (cookies.find((c) => c.name === 'ds_user_id') || {}).value
 }
-const estaLogado = (page) => !page.url().includes('/accounts/login')
+// Logado = NÃO tem formulário de login E tem cookie de sessão.
+async function estaLogado(page) {
+  try {
+    const form = await page.$('input[name="username"], input[name="password"]')
+    if (form) return false
+    const c = await page.context().cookies('https://www.instagram.com')
+    return !!(c.find((x) => x.name === 'sessionid' && x.value) && c.find((x) => x.name === 'ds_user_id' && x.value))
+  } catch { return false }
+}
 
 async function getPostIds(page, dsUserId, numPosts) {
   return page.evaluate(async ({ dsUserId, numPosts }) => {
@@ -84,16 +92,17 @@ async function main() {
   await page.waitForTimeout(3000)
 
   // Login: usa o perfil salvo; se preciso e interativo, espera voce logar.
-  if (!estaLogado(page)) {
+  if (!(await estaLogado(page))) {
     if (INTERATIVO) {
-      console.log('🔑 Faca login no Instagram na janela que abriu (com 2FA). Aguardando ate 3 min...')
-      for (let i = 0; i < 18 && !estaLogado(page); i++) await page.waitForTimeout(10000)
+      console.log('🔑 FACA LOGIN no Instagram na janela que abriu (usuario + senha + 2FA). Aguardando ate 5 min...')
+      for (let i = 0; i < 30 && !(await estaLogado(page)); i++) await page.waitForTimeout(10000)
     }
-    if (!estaLogado(page)) {
+    if (!(await estaLogado(page))) {
       console.log('⛔ Nao logado. Avisando pelo Telegram (a VM manda) e saindo.')
       escreverStatus(false, 'precisa_login') // a VM le isso e te avisa no Telegram
       await ctx.close(); process.exit(2)
     }
+    console.log('✅ Login detectado! Seguindo com a captura...')
   }
   const dsUserId = await dsUserIdDo(ctx)
   if (!dsUserId) { escreverStatus(false, 'sem_ds_user_id'); await ctx.close(); process.exit(2) }
