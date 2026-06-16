@@ -208,6 +208,13 @@ async function cmdResumo(chatId: string) {
   await bot.sendMessage(chatId, `📊 *Resumo (7 dias)*\nPosts: *${posts.length}* · ❤️ *${tl.toLocaleString('pt-BR')}* · 💬 *${tc.toLocaleString('pt-BR')}*\n\n🏆 Top:\n${top || '(sem posts novos)'}`, { parse_mode: 'Markdown' })
 }
 
+// ─── Canal de comando p/ o DESKTOP (Hermes) via pasta sincronizada (Syncthing) ───
+const CMD_FILE = '/home/ubuntu/likers-sync/comando.json'
+function escreverComando(obj: Record<string, unknown>) {
+  try { fs.mkdirSync(path.dirname(CMD_FILE), { recursive: true }); fs.writeFileSync(CMD_FILE, JSON.stringify({ ...obj, ts: Date.now() })) } catch (e) { console.error('cmd write:', e) }
+}
+function lerComando(): Record<string, unknown> { try { return JSON.parse(fs.readFileSync(CMD_FILE, 'utf8')) } catch { return {} } }
+
 // Menu de botões "vivos" (tappáveis) no Telegram.
 const MENU_KB = {
   inline_keyboard: [
@@ -283,6 +290,15 @@ bot.on('message', async (msg) => {
       if (cmd === '/curtidores') { await cmdCurtidores(chatId); return }
       if (cmd === '/posts') { await cmdPosts(chatId); return }
       if (cmd === '/resumo') { await cmdResumo(chatId); return }
+      // ── Controle do DESKTOP (Hermes) ──
+      if (cmd === '/capturar') { escreverComando({ acao: 'capturar', feito: false }); await bot.sendMessage(chatId, '📡 Comando enviado ao desktop: *capturar curtidores*. O Hermes pega em até 15s e roda.', { parse_mode: 'Markdown' }); return }
+      if (cmd === '/login') { escreverComando({ acao: 'login_instagram', feito: false }); await bot.sendMessage(chatId, '🔑 Pedido de *login no Instagram* enviado ao desktop.\n\nQuando ele chegar na tela do código (2FA), eu te aviso — aí você manda rápido:\n`/codigo 123456`', { parse_mode: 'Markdown' }); return }
+      if (cmd === '/codigo') {
+        const code = (text.split(/\s+/)[1] || '').replace(/\D/g, '')
+        if (!code) { await bot.sendMessage(chatId, 'Use assim: /codigo 123456'); return }
+        const c = lerComando(); c.codigo_2fa = code; c.feito = false; escreverComando(c)
+        await bot.sendMessage(chatId, `🔢 Código *${code}* enviado ao desktop. Rápido — ele tem ~10s!`, { parse_mode: 'Markdown' }); return
+      }
       const reply = TXT[cmd] ?? 'Comando não reconhecido. Use /ajuda para ver a lista.'
       await bot.sendMessage(chatId, reply, { parse_mode: 'Markdown', disable_web_page_preview: true })
     } catch (err) {
@@ -335,6 +351,8 @@ async function registrarComandos() {
         { command: 'curtidores', description: 'Top de quem mais curtiu' },
         { command: 'posts', description: 'Top posts' },
         { command: 'resumo', description: 'Resumo dos últimos 7 dias' },
+        { command: 'capturar', description: '🕷️ Capturar curtidores (desktop)' },
+        { command: 'login', description: '🔑 Relogar no Instagram (desktop)' },
         { command: 'ajuda', description: 'Lista de comandos' },
       ],
       { scope: { type: 'chat', chat_id: Number(OWNER_ID) } },
@@ -345,6 +363,25 @@ async function registrarComandos() {
   }
 }
 void registrarComandos()
+
+// Relay rápido: vigia a resposta do desktop (Hermes) e repassa ao dono no Telegram.
+// Importante p/ o 2FA: avisa na hora que o desktop chegou na tela do código.
+const RESP_FILE = '/home/ubuntu/likers-sync/resposta.json'
+let ultimaResp = ''
+function watchResposta() {
+  if (!OWNER_ID) return
+  try {
+    const raw = fs.readFileSync(RESP_FILE, 'utf8')
+    if (raw === ultimaResp) return
+    ultimaResp = raw
+    const r = JSON.parse(raw)
+    const txt = r.aguardando_2fa
+      ? '🔑 O desktop chegou na tela do *código (2FA)*. Mande AGORA um código fresco do autenticador:\n`/codigo 123456`'
+      : `🖥️ *Desktop:* ${r.ok === false ? '⚠️ ' : '✅ '}${r.msg ?? JSON.stringify(r)}`
+    void bot.sendMessage(Number(OWNER_ID), txt, { parse_mode: 'Markdown' }).catch(() => {})
+  } catch { /* sem arquivo ainda */ }
+}
+setInterval(watchResposta, 5000)
 
 // Alerta proativo: avisa o dono quando o token do Facebook/IG expira (monitor para de receber dados).
 let ultimoAvisoToken = 0
