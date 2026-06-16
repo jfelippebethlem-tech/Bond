@@ -58,7 +58,20 @@ async function estaLogado(page) {
 async function igHeaders(ctx) {
   const c = await ctx.cookies('https://www.instagram.com')
   const csrf = (c.find((x) => x.name === 'csrftoken') || {}).value || ''
-  return { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
+  return {
+    'x-ig-app-id': '936619743392459',
+    'x-requested-with': 'XMLHttpRequest',
+    'x-csrftoken': csrf,
+    'referer': 'https://www.instagram.com/',
+    'accept': '*/*',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+  }
+}
+// Lê JSON com segurança; se vier HTML (checkpoint/bloqueio) NÃO quebra.
+async function jsonSeguro(r) {
+  const ct = (r.headers()['content-type'] || '')
+  if (!ct.includes('json')) return null // HTML = bloqueio/checkpoint provável
+  try { return await r.json() } catch { return null }
 }
 async function getPostIds(ctx, dsUserId, numPosts) {
   const headers = await igHeaders(ctx)
@@ -67,8 +80,8 @@ async function getPostIds(ctx, dsUserId, numPosts) {
     let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=33`
     if (maxId) url += `&max_id=${maxId}`
     const r = await ctx.request.get(url, { headers })
-    if (!r.ok()) break
-    const d = await r.json()
+    const d = await jsonSeguro(r)
+    if (!d) break
     for (const it of (d.items || [])) ids.push(String(it.pk || it.id))
     if (!d.more_available || !d.next_max_id) break
     maxId = d.next_max_id
@@ -80,8 +93,8 @@ async function getLikers(ctx, pid) {
   const headers = await igHeaders(ctx)
   const r = await ctx.request.get(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { headers })
   if (r.status() === 429) return { rateLimited: true }
-  if (!r.ok()) return { error: r.status() }
-  const d = await r.json()
+  const d = await jsonSeguro(r)
+  if (!d) return { bloqueado: true, status: r.status() } // veio HTML = checkpoint/bloqueio
   return { users: (d.users || []).map((u) => u.username).filter(Boolean) }
 }
 
@@ -126,6 +139,11 @@ async function main() {
     const pid = state.pending[0]
     const res = await getLikers(ctx, pid)
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
+    if (res.bloqueado) { // veio HTML em vez de JSON -> a requisicao precisa de ajuste (NAO e ban)
+      console.log(`  ⚠️ Likers de ${pid} voltou HTML (status ${res.status}) em vez de JSON. A request precisa de ajuste.`)
+      escreverStatus(false, 'request_ajuste'); saveState(state)
+      await ctx.close(); gravarSaida(state.contagem); process.exit(3)
+    }
     if (res.users) for (const u of res.users) state.contagem[u] = (state.contagem[u] || 0) + 1
     state.done.push(pid); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
     console.log(`  [${state.done.length}/${total}] ${pid} -> ${res.users ? res.users.length : 'erro ' + res.error}`)
