@@ -17,16 +17,27 @@ function parseCount(v: unknown): number {
 function parseExport(txt: string): { username: string; curtidas: number }[] {
   txt = txt.trim()
   if (!txt) return []
-  // tenta JSON
+  // tenta JSON — aceita: nosso formato simples, o EXPORT do Leaderboard (array
+  // de {user:{username}, likesCount}) E o dump do localStorage (SavedScan com
+  // likerMap / followingLeaderboard / notFollowingLeaderboard).
   if (txt.startsWith('[') || txt.startsWith('{')) {
     try {
       const j = JSON.parse(txt)
-      const arr = Array.isArray(j) ? j : Array.isArray(j.data) ? j.data : Array.isArray(j.leaderboard) ? j.leaderboard : []
-      return arr.map((o: Record<string, unknown>) => {
-        const username = String(o.username ?? o.user ?? o.handle ?? o.name ?? o.usuario ?? '').replace(/^@/, '').trim()
-        const curtidas = parseCount(o.likes ?? o.likeCount ?? o.count ?? o.total ?? o.curtidas ?? o.liked ?? o.score)
-        return { username, curtidas }
-      }).filter((x: { username: string }) => x.username)
+      let arr: Record<string, unknown>[] = []
+      if (Array.isArray(j)) arr = j
+      else if (j.likerMap && typeof j.likerMap === 'object') arr = Object.values(j.likerMap)
+      else if (Array.isArray(j.followingLeaderboard) || Array.isArray(j.notFollowingLeaderboard)) arr = [...(j.followingLeaderboard || []), ...(j.notFollowingLeaderboard || [])]
+      else if (Array.isArray(j.data)) arr = j.data
+      else if (Array.isArray(j.leaderboard)) arr = j.leaderboard
+      const map = new Map<string, number>()
+      for (const o of arr) {
+        const u = o.user as Record<string, unknown> | undefined
+        const username = String((u && u.username) ?? o.username ?? o.handle ?? o.name ?? o.usuario ?? '').replace(/^@/, '').trim()
+        if (!username) continue
+        const curtidas = parseCount(o.likesCount ?? o.likes ?? o.likeCount ?? o.count ?? o.total ?? o.curtidas ?? o.liked ?? o.score)
+        map.set(username, Math.max(map.get(username) ?? 0, curtidas)) // dedup: maior valor
+      }
+      return Array.from(map.entries()).map(([username, curtidas]) => ({ username, curtidas }))
     } catch { /* cai pro CSV */ }
   }
   // CSV
