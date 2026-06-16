@@ -18,6 +18,7 @@
 // Uso:  node scripts/captura-likers.mjs
 import 'dotenv/config'
 import fs from 'fs'
+import path from 'path'
 import { chromium } from 'playwright'
 
 // ── Travas de segurança ──────────────────────────────────────────────
@@ -116,9 +117,12 @@ async function main() {
   const ranking = Array.from(contagem.entries())
     .map(([username, curtidas]) => ({ username, curtidas }))
     .sort((a, b) => b.curtidas - a.curtidas)
-  fs.writeFileSync('likers.json', JSON.stringify(ranking, null, 2))
-  fs.writeFileSync('likers.csv', 'username,curtidas\n' + ranking.map((r) => `${r.username},${r.curtidas}`).join('\n'))
-  console.log(`✅ ${processados} posts, ${ranking.length} curtidores únicos. Salvo: likers.json / likers.csv`)
+  // Escreve na pasta SINCRONIZADA (Syncthing) se LIKERS_OUT_DIR estiver setado.
+  const OUT = process.env.LIKERS_OUT_DIR || '.'
+  fs.mkdirSync(OUT, { recursive: true })
+  fs.writeFileSync(path.join(OUT, 'likers.json'), JSON.stringify(ranking, null, 2))
+  fs.writeFileSync(path.join(OUT, 'likers.csv'), 'username,curtidas\n' + ranking.map((r) => `${r.username},${r.curtidas}`).join('\n'))
+  console.log(`✅ ${processados} posts, ${ranking.length} curtidores únicos. Salvo em: ${OUT}/likers.json (Syncthing leva pra VM)`)
   console.log('Top 10:', ranking.slice(0, 10).map((r) => `${r.username}(${r.curtidas})`).join(', '))
 
   // 4) Empurra pra VM (se configurado)
