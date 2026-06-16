@@ -23,6 +23,7 @@ import {
   MessageSquare,
   Sparkles,
   Heart,
+  Trophy,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
@@ -37,6 +38,8 @@ const nav = [
   { href: '/campanha', icon: TrendingUp, label: 'Campanha' },
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
   { href: '/interacoes', icon: Heart, label: 'Interações' },
+  { href: '/posts', icon: Trophy, label: 'Posts' },
+  { href: '/curtidores', icon: Heart, label: 'Quem curtiu' },
   { href: '/analise', icon: Brain, label: 'Análise de Conteúdo' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
   { href: '/demandas', icon: FileText, label: 'Demandas' },
