@@ -29,11 +29,17 @@ export async function GET(req: NextRequest) {
 
   if (tipo === 'posts') {
     const plataforma = searchParams.get('plataforma')
+    const ordenar = searchParams.get('ordenar') // 'likes' | 'comentarios' | null(recentes)
+    const de = searchParams.get('de'), ate = searchParams.get('ate')
+    const dateW: { gte?: Date; lte?: Date } = {}
+    if (de) dateW.gte = new Date(de + 'T00:00:00')
+    if (ate) dateW.lte = new Date(ate + 'T23:59:59')
+    const orderBy = ordenar === 'likes' ? [{ likes: 'desc' as const }] : ordenar === 'comentarios' ? [{ comentarios: 'desc' as const }] : [{ publicadoEm: 'desc' as const }]
     const posts = await prisma.bondPost.findMany({
-      where: plataforma ? { plataforma } : undefined,
-      orderBy: [{ publicadoEm: 'desc' }],
-      take: 50,
-      include: { perfil: true },
+      where: { ...(plataforma ? { plataforma } : {}), ...((de || ate) ? { publicadoEm: dateW } : {}) },
+      orderBy,
+      take: 300,
+      select: { id: true, plataforma: true, tipo: true, conteudo: true, url: true, imagemUrl: true, likes: true, comentarios: true, alcance: true, engajamento: true, publicadoEm: true },
     })
     return NextResponse.json(posts)
   }
