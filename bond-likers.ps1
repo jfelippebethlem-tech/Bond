@@ -49,15 +49,19 @@ try {
   Set-EnvVal "IG_PERFIL"        "depjorgefelippeneto"
   if (-not (Get-EnvVal "IG_NUM_POSTS")) { Set-EnvVal "IG_NUM_POSTS" "12" }
 
-  # Pasta SINCRONIZADA do Syncthing (separada do repo!). Pergunta se nao existir.
+  # Pasta SINCRONIZADA do Syncthing. Detecta automaticamente onde voce aceitou:
+  # dentro do repo (C:\jfn\bond\likers-sync) OU irma (C:\jfn\likers-sync).
   $syncDir = Get-EnvVal "LIKERS_OUT_DIR"
   if ((-not $syncDir) -or (-not (Test-Path $syncDir))) {
-    $padrao = Join-Path (Split-Path $PSScriptRoot -Parent) "likers-sync"
-    if ($Scheduled) { $syncDir = $padrao; Set-EnvVal "LIKERS_OUT_DIR" $syncDir }
-    Write-Host "Qual o caminho da pasta 'likers-sync' que voce aceitou no Syncthing?" -ForegroundColor Yellow
-    Write-Host "(NAO use a pasta do repo - tem que ser uma pasta separada)" -ForegroundColor DarkYellow
-    $resp = if ($Scheduled) { "" } else { Read-Host "Caminho (Enter = $padrao)" }
-    if ([string]::IsNullOrWhiteSpace($resp)) { $syncDir = $padrao } else { $syncDir = $resp.Trim().Trim('"') }
+    $cand1 = Join-Path $PSScriptRoot "likers-sync"                       # dentro do repo
+    $cand2 = Join-Path (Split-Path $PSScriptRoot -Parent) "likers-sync"  # pasta irma
+    if (Test-Path $cand1) { $syncDir = $cand1 }
+    elseif (Test-Path $cand2) { $syncDir = $cand2 }
+    elseif ($Scheduled) { $syncDir = $cand1 }
+    else {
+      $resp = Read-Host "Caminho da pasta 'likers-sync' do Syncthing (Enter = $cand1)"
+      $syncDir = if ([string]::IsNullOrWhiteSpace($resp)) { $cand1 } else { $resp.Trim().Trim('"') }
+    }
     Set-EnvVal "LIKERS_OUT_DIR" $syncDir
   }
   if (-not (Test-Path $syncDir)) { New-Item -ItemType Directory -Path $syncDir -Force | Out-Null }
