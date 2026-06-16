@@ -49,6 +49,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(fas)
   }
 
+  // Ranking de curtidores (importado do desktop). totalLikes vem do export do Leaderboard.
+  if (tipo === 'curtidores') {
+    const itens = await prisma.bondFa.findMany({
+      where: { plataforma: 'instagram', totalLikes: { gt: 0 } },
+      orderBy: { totalLikes: 'desc' },
+      take: 1000,
+      select: { username: true, nome: true, totalLikes: true, totalComents: true },
+    })
+    return NextResponse.json({ total: itens.length, data: itens })
+  }
+
   if (tipo === 'ranking_geral') {
     return NextResponse.json(await gerarRankingGeral())
   }
@@ -219,6 +230,25 @@ export async function POST(req: NextRequest) {
     const { mensagem, historico = [] } = body
     const resposta = await chatComBond(mensagem, historico)
     return NextResponse.json({ resposta })
+  }
+
+  // Importa o ranking de CURTIDORES exportado no DESKTOP (InstagramLikesLeaderboard).
+  // NÃO faz nenhuma chamada ao Instagram — só ingere os dados que o dono trouxer.
+  if (acao === 'importar_curtidores') {
+    const itens: { username?: string; curtidas?: number; percentual?: number }[] = Array.isArray(body.itens) ? body.itens : []
+    let ok = 0
+    for (const it of itens) {
+      const u = (it.username || '').trim().replace(/^@/, '')
+      if (!u) continue
+      const n = Math.max(0, Math.round(Number(it.curtidas) || 0))
+      await prisma.bondFa.upsert({
+        where: { plataforma_externalId: { plataforma: 'instagram', externalId: u } },
+        update: { username: u, nome: u, totalLikes: n, ultimaInter: new Date() },
+        create: { plataforma: 'instagram', externalId: u, username: u, nome: u, totalLikes: n, ultimaInter: new Date() },
+      })
+      ok++
+    }
+    return NextResponse.json({ ok, total: itens.length })
   }
 
   if (acao === 'analise_profunda') {
