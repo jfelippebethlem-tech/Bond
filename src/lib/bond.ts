@@ -81,24 +81,28 @@ async function vincularPessoa(plataforma: string, externalId: string, username: 
   }
 }
 
-async function registrarInteracao(plataforma: string, externalId: string, tipo: 'like' | 'comment' | 'share', postId: string) {
+async function registrarInteracao(plataforma: string, externalId: string, tipo: 'like' | 'comment' | 'share', postId: string, data?: Date) {
+  // `data` = data REAL da interação (quando a API fornece, ex.: comentário). UPDATE backfilla linhas antigas.
+  const pub = data && !isNaN(+data) ? data : undefined
   try {
     await prisma.bondInteracao.upsert({
       where: { plataforma_externalId_tipo_postId: { plataforma, externalId, tipo, postId } },
-      update: {},
-      create: { plataforma, externalId, tipo, postId },
+      update: pub ? { publicadoEm: pub } : {},
+      create: { plataforma, externalId, tipo, postId, publicadoEm: pub },
     })
   } catch { /* duplicate on re-sync — ignore */ }
 }
 
 async function salvarComentario(
   plataforma: string, postId: string, comentarioId: string,
-  autor: string | null, autorId: string | null, texto: string
+  autor: string | null, autorId: string | null, texto: string, data?: Date
 ) {
+  // `data` = data REAL do comentário (created_time FB / timestamp IG). UPDATE backfilla os já existentes.
+  const pub = data && !isNaN(+data) ? data : undefined
   await prisma.bondComentario.upsert({
     where: { plataforma_comentarioId: { plataforma, comentarioId } },
-    update: {},
-    create: { plataforma, postId, comentarioId, autor, autorId, texto },
+    update: pub ? { publicadoEm: pub } : {},
+    create: { plataforma, postId, comentarioId, autor, autorId, texto, publicadoEm: pub },
   })
 }
 
@@ -270,9 +274,10 @@ export async function syncFacebook() {
     for (const comment of comments) {
       if (!comment.from?.id) continue
       await upsertFa('facebook', comment.from.id, comment.from.name, null, false)
-      await registrarInteracao('facebook', comment.from.id, 'comment', post.id)
+      const cdt = comment.created_time ? new Date(comment.created_time) : undefined
+      await registrarInteracao('facebook', comment.from.id, 'comment', post.id, cdt)
       if (comment.id && comment.message) {
-        await salvarComentario('facebook', post.id, comment.id, comment.from.name, comment.from.id, comment.message)
+        await salvarComentario('facebook', post.id, comment.id, comment.from.name, comment.from.id, comment.message, cdt)
       }
     }
     synced++
@@ -356,17 +361,19 @@ export async function syncInstagram(limitPosts = 20) {
 
     for (const c of comments) {
       await upsertFa('instagram', c.id, c.username, c.username, false)
-      await registrarInteracao('instagram', c.id, 'comment', post.id)
+      const cdt = c.timestamp ? new Date(c.timestamp) : undefined
+      await registrarInteracao('instagram', c.id, 'comment', post.id, cdt)
       if (c.text) {
-        await salvarComentario('instagram', post.id, c.id, c.username, c.id, c.text)
+        await salvarComentario('instagram', post.id, c.id, c.username, c.id, c.text, cdt)
       }
       // respostas (replies) — contam no comments_count do post; sem isso o monitor subconta
-      const replies = (c.replies?.data ?? []) as { id: string; username?: string; text?: string }[]
+      const replies = (c.replies?.data ?? []) as { id: string; username?: string; text?: string; timestamp?: string }[]
       for (const r of replies) {
         if (!r.username) continue
         await upsertFa('instagram', r.id, r.username, r.username, false)
-        await registrarInteracao('instagram', r.id, 'comment', post.id)
-        if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text)
+        const rdt = r.timestamp ? new Date(r.timestamp) : undefined
+        await registrarInteracao('instagram', r.id, 'comment', post.id, rdt)
+        if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text, rdt)
       }
     }
     synced++
