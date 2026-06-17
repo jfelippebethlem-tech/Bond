@@ -449,7 +449,7 @@ async function main() {
   const ranking = gravarTudo(state)
   escreverStatus(true, null)
   try { fs.unlinkSync(STATE_FILE) } catch {}
-  console.log(`✅ Completo. ${ranking.length} curtidores | ${state.followers ? state.followers.length : '-'} followers | ${state.following ? state.following.length : '-'} following | ${totalPosts} posts`)
+  console.log(`✅ Completo. ${ranking.length} curtidores | ${state.followers ? state.followers.length : '-'} followers | ${state.following ? state.following.length : '-'} following | ${state.done.length} posts`)
   console.log(`   Saidas em ${OUT}: likers.json, leaderboard.csv, likers-detalhado.json, posts-curtidores.json, leaderboard-seguindo.json, leaderboard-nao-seguindo.json, follower-analysis.json, followers.json, following.json`)
   console.log('Top 10:', ranking.slice(0, 10).map((r) => `${r.username}(${r.curtidas})`).join(', '))
 }
