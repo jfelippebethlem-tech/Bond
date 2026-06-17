@@ -238,7 +238,7 @@ export default function CampanhaPage() {
                             <div className="flex items-center gap-2 mt-1 text-xs text-gray-400">
                               <span className="flex items-center gap-0.5"><Heart className="w-2.5 h-2.5 text-red-400" />{p.likes}</span>
                               <span className="flex items-center gap-0.5"><MessageCircle className="w-2.5 h-2.5 text-blue-400" />{p.comentarios}</span>
-                              <span className="flex items-center gap-0.5"><Share2 className="w-2.5 h-2.5 text-green-400" />{p.compartilhos}</span>
+                              {p.plataforma !== 'instagram' && <span className="flex items-center gap-0.5"><Share2 className="w-2.5 h-2.5 text-green-400" />{p.compartilhos}</span>}
                             </div>
                           </div>
                         ))}
@@ -259,7 +259,7 @@ export default function CampanhaPage() {
                             <div className="flex items-center gap-2 mt-1 text-xs text-gray-300">
                               <span className="flex items-center gap-0.5"><Heart className="w-2.5 h-2.5" />{p.likes}</span>
                               <span className="flex items-center gap-0.5"><MessageCircle className="w-2.5 h-2.5" />{p.comentarios}</span>
-                              <span className="flex items-center gap-0.5"><Share2 className="w-2.5 h-2.5" />{p.compartilhos}</span>
+                              {p.plataforma !== 'instagram' && <span className="flex items-center gap-0.5"><Share2 className="w-2.5 h-2.5" />{p.compartilhos}</span>}
                             </div>
                           </div>
                         ))}
