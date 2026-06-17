@@ -150,7 +150,7 @@ export default function InteracoesPage() {
         <Card icon={<Activity size={18} className="text-indigo-600" />} cor="bg-indigo-50" label="Total" valor={stats.total} />
         <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas (nos posts)" valor={(stats.curtidasPostagens ?? 0) || stats.like} />
         <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={stats.comment} />
-        <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />
+        {plataforma !== 'instagram' && <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />}
       </div>
 
       {/* Nota de honestidade: limitação da API do Instagram p/ curtidas/compart. individuais */}

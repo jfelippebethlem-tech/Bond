@@ -445,7 +445,7 @@ export default function BondPage() {
                           <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
                             <span className="flex items-center gap-1"><Heart className="w-3 h-3 text-red-400" />{post.likes.toLocaleString()}</span>
                             <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3 text-blue-400" />{post.comentarios.toLocaleString()}</span>
-                            <span className="flex items-center gap-1"><Share2 className="w-3 h-3 text-green-400" />{post.compartilhos.toLocaleString()}</span>
+                            {post.plataforma !== 'instagram' && <span className="flex items-center gap-1"><Share2 className="w-3 h-3 text-green-400" />{post.compartilhos.toLocaleString()}</span>}
                             <span className="flex items-center gap-1"><Eye className="w-3 h-3 text-purple-400" />{post.alcance.toLocaleString()}</span>
                             <span className="flex items-center gap-1 ml-auto font-medium text-gray-600"><TrendingUp className="w-3 h-3" />{post.engajamento.toFixed(2)}%</span>
                             <span>{formatDistanceToNow(new Date(post.publicadoEm), { addSuffix: true, locale: ptBR })}</span>
