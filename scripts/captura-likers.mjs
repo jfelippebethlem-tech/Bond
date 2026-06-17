@@ -254,10 +254,14 @@ async function getLikersDOM(page, code) {
   } catch {}
   if (!abriu) { try { await page.goto(`https://www.instagram.com/p/${code}/liked_by/`, { waitUntil: 'domcontentloaded' }) } catch {} }
   await page.waitForTimeout(rand(2500, 3800))
-  // 3) rola o modal/lista pra paginar (dispara mais /graphql/query) e coleta DOM
+  // 3) rola o modal/lista pra paginar (dispara mais /graphql/query) e coleta DOM.
+  //    Persistente: o jump-to-bottom sozinho as vezes nao dispara o lazy-load, entao
+  //    tambem damos scrollIntoView no ultimo item + evento scroll. Paciencia maior
+  //    (estavel<8) pra nao cortar listas grandes (posts com milhares de curtidas).
   const viaDom = new Set()
   let prev = -1, estavel = 0
-  for (let i = 0; i < 80 && estavel < 4; i++) {
+  const MAX_IT = Math.max(20, parseInt(process.env.IG_SCROLL_MAX || '200', 10))
+  for (let i = 0; i < MAX_IT && estavel < 8; i++) {
     // SO raspa dentro do modal (role=dialog) — nunca a pagina inteira (evita
     // pegar dono/comentaristas). Se nao ha modal, viaDom fica vazio e usamos a API.
     const domU = await page.evaluate(() => {
@@ -273,10 +277,13 @@ async function getLikersDOM(page, code) {
     domU.forEach((x) => { if (!NAO_USER.has(x)) viaDom.add(x) })
     await page.evaluate(() => {
       const dlg = document.querySelector('div[role="dialog"]')
-      const sc = dlg && [...dlg.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 60)
-      if (sc) sc.scrollTop = sc.scrollHeight
+      if (!dlg) return
+      const sc = [...dlg.querySelectorAll('*')].find((e) => e.scrollHeight > e.clientHeight + 60)
+      if (sc) { sc.scrollTop = sc.scrollHeight; sc.dispatchEvent(new Event('scroll', { bubbles: true })) }
+      const links = dlg.querySelectorAll('a[href^="/"]')
+      if (links.length) links[links.length - 1].scrollIntoView({ block: 'end' })
     }).catch(() => {})
-    await page.waitForTimeout(rand(1100, 2100))
+    await page.waitForTimeout(rand(1200, 2200))
     const tot = apiMap.size + viaDom.size
     if (tot === prev) estavel++; else { estavel = 0; prev = tot }
   }
@@ -349,8 +356,9 @@ async function coletarLista(page, dsUserId, tipo, limite, reqCounter) {
     if (limite && users.size >= limite) break
     maxId = d.next_max_id
     if (!maxId) break
-    await sleep(rand(1500, 3000))
-    if (reqCounter.n % 60 === 0) { console.log('  💤 cooldown global 30s (anti-ban)...'); await sleep(30000) }
+    await sleep(rand(3000, 8000)) // ritmo humano entre paginas
+    // descanso longo aleatorio a cada ~10-15 paginas (varia)
+    if (pag % (10 + Math.floor(rand(0, 6))) === 0) { const d = rand(30000, 80000); console.log(`  💤 descanso ${Math.round(d / 1000)}s (anti-bloqueio)...`); await sleep(d) }
   }
   return [...users.values()]
 }
@@ -421,8 +429,13 @@ async function main() {
   if (state && Array.isArray(state.pending) && state.pending.length) {
     console.log(`↺ Retomando: ${state.done.length} feitos, ${state.pending.length} restantes.`)
   } else {
+    // ALVO: por padrao a propria conta logada; mas IG_TARGET_USER permite mirar
+    // OUTRA conta (ex.: logar numa 2a conta que ENXERGA os likers da business e
+    // ler os curtidores dos posts dela, contornando bloqueio do owner).
+    const TARGET = (process.env.IG_TARGET_USER || dsUserId).toString().trim()
+    if (TARGET !== dsUserId) console.log(`🎯 Conta-alvo dos posts/likers: ${TARGET} (logado como ${dsUserId})`)
     console.log(`▶ Nova captura dos ${NUM_POSTS} posts recentes...`)
-    let ids = await getPostIds(ctx, dsUserId, NUM_POSTS)
+    let ids = await getPostIds(ctx, TARGET, NUM_POSTS)
     if (!ids.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
     // Filtro "dessa semana": IG_DAYS=7 => so posts dos ultimos 7 dias.
     const DIAS = Math.max(0, parseInt(process.env.IG_DAYS || '0', 10))
@@ -442,9 +455,20 @@ async function main() {
   const reqCounter = { n: 0 }
   const FOLLOW_LIMIT = Math.max(0, parseInt(process.env.IG_FOLLOW_LIMIT || '0', 10)) // 0 = todos
 
+  // RITMO HUMANO (tempos aleatorios, sem pressa, pra Meta nao pegar padrao).
+  // Defaults conservadores; ajustaveis no .env. Variancia ALTA = parece gente.
+  const PAUSA_MIN = Math.max(1000, parseInt(process.env.IG_PAUSA_MIN || '6000', 10))   // entre posts
+  const PAUSA_MAX = Math.max(PAUSA_MIN + 1000, parseInt(process.env.IG_PAUSA_MAX || '20000', 10))
+  const DESCANSO_MIN = Math.max(10000, parseInt(process.env.IG_DESCANSO_MIN || '45000', 10)) // descanso longo
+  const DESCANSO_MAX = Math.max(DESCANSO_MIN + 5000, parseInt(process.env.IG_DESCANSO_MAX || '150000', 10))
+  const novoLote = () => Math.floor(rand(3, 7))  // qtde de posts antes de um descanso longo
+  // warmup inicial (chega devagar, como quem abriu o app)
+  await sleep(rand(2000, 6000))
+
   // FASE 1: curtidores por post (com atribuicao e perfis ricos)
   const total = state.done.length + state.pending.length
   let desdeUltimaPausa = 0
+  let loteAlvo = novoLote()
   let falhasSeguidas = 0          // detector de BLOQUEIO (HTML/modal vazio)
   const MAX_FALHAS = Math.max(2, parseInt(process.env.IG_MAX_FALHAS || '3', 10))
   let likersBloqueado = false
@@ -485,8 +509,17 @@ async function main() {
     state.done.push(post.pk); state.pending.shift(); saveState(state); gravarTudo(state)
     reqCounter.n++
     console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error} (${res.fonte})`)
-    await sleep(rand(2000, 4000)) // pausa humana entre posts (rapida, REST e leve)
-    if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 15s (anti-ban)...'); await sleep(15000) }
+    // pausa humana entre posts: aleatoria e com folga (varia muito)
+    const p = rand(PAUSA_MIN, PAUSA_MAX)
+    console.log(`  ⏳ pausa ${Math.round(p / 1000)}s...`)
+    await sleep(p)
+    // de vez em quando, um descanso LONGO (como quem largou o celular um tempo)
+    if (++desdeUltimaPausa >= loteAlvo) {
+      desdeUltimaPausa = 0; loteAlvo = novoLote()
+      const d = rand(DESCANSO_MIN, DESCANSO_MAX)
+      console.log(`  💤 descanso longo ${Math.round(d / 1000)}s (anti-bloqueio)...`)
+      await sleep(d)
+    }
   }
 
   // Se likers bloqueado: para tudo (nao puxa followers/following = nao adiciona
@@ -498,14 +531,17 @@ async function main() {
     await ctx.close(); process.exit(3)
   }
 
+  // Em modo conta-alvo (IG_TARGET_USER) nao coletamos followers/following — sao
+  // da conta logada (viewer), nao da business; e a business nao expoe a lista.
+  const modoAlvo = !!process.env.IG_TARGET_USER
   // FASE 2: following (quem VOCE segue) — opcional via IG_COLLECT_FOLLOWING
-  if (process.env.IG_COLLECT_FOLLOWING !== 'false' && !state.following) {
+  if (!modoAlvo && process.env.IG_COLLECT_FOLLOWING !== 'false' && !state.following) {
     console.log('▶ Coletando following (quem voce segue)...')
     try { state.following = await coletarLista(page, dsUserId, 'following', FOLLOW_LIMIT, reqCounter) } catch (e) { console.log('  following falhou:', e.message) }
     saveState(state); gravarTudo(state)
   }
   // FASE 3: followers (quem te segue) — opcional via IG_COLLECT_FOLLOWERS
-  if (process.env.IG_COLLECT_FOLLOWERS !== 'false' && !state.followers) {
+  if (!modoAlvo && process.env.IG_COLLECT_FOLLOWERS !== 'false' && !state.followers) {
     console.log('▶ Coletando followers (quem te segue)...')
     try { state.followers = await coletarLista(page, dsUserId, 'followers', FOLLOW_LIMIT, reqCounter) } catch (e) { console.log('  followers falhou:', e.message) }
     saveState(state); gravarTudo(state)
