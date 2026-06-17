@@ -155,7 +155,7 @@ async function getPostIds(ctx, dsUserId, numPosts) {
     const r = await ctx.request.get(url, { headers })
     if (!r.ok()) break
     const d = await r.json()
-    for (const it of (d.items || [])) ids.push({ pk: String(it.pk || it.id), code: it.code || null })
+    for (const it of (d.items || [])) ids.push({ pk: String(it.pk || it.id), code: it.code || null, taken_at: it.taken_at || 0 })
     if (!d.more_available || !d.next_max_id) break
     maxId = d.next_max_id
     await sleep(rand(2000, 4000))
@@ -291,6 +291,33 @@ async function getLikersDOM(page, code) {
   return { users }
 }
 
+// METODO RAPIDO (igual ao original): 1 fetch REST /media/<pk>/likers/ DENTRO da
+// pagina (autenticado). Volta todos os curtidores em JSON na hora, SEM navegar.
+// Funciona com a conta saudavel; se vier HTML (throttle), caimos no modal.
+async function likersREST(page, pid) {
+  const out = await page.evaluate(async (pid) => {
+    try {
+      const r = await fetch(`https://www.instagram.com/api/v1/media/${pid}/likers/`, { credentials: 'include', headers: { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' } })
+      return { status: r.status, ct: r.headers.get('content-type') || '', text: await r.text() }
+    } catch (e) { return { status: -1, ct: '', text: String(e && e.message || e) } }
+  }, pid)
+  if (out.status === 429) return { rateLimited: true }
+  if (out.status !== 200 || !out.ct.includes('json')) return { html: true, status: out.status }
+  try {
+    const d = JSON.parse(out.text)
+    const users = (d.users || []).filter((u) => u.username && !NAO_USER.has(u.username)).map((u) => ({ username: u.username, full_name: u.full_name || '', is_verified: !!u.is_verified, is_private: !!u.is_private, pk: String(u.pk || '') }))
+    return { users }
+  } catch { return { html: true } }
+}
+// Orquestra: REST rapido primeiro; modal (lento, navega) so se REST falhar.
+async function capturarLikers(page, pid, code) {
+  const rest = await likersREST(page, pid)
+  if (rest.rateLimited) return { rateLimited: true }
+  if (rest.users) return { users: rest.users, fonte: 'rest' }
+  const dom = await getLikersDOM(page, code)
+  return { users: dom.users, error: dom.error, fonte: dom.users ? 'dom' : 'erro' }
+}
+
 // FOLLOWERS / FOLLOWING: fetch DENTRO da pagina (autenticado), endpoint
 // /friendships/<id>/{followers|following}/?count=200, paginado por next_max_id.
 // limite=0 => todos. reqCounter compartilhado pro cooldown global anti-ban.
@@ -393,8 +420,17 @@ async function main() {
     console.log(`↺ Retomando: ${state.done.length} feitos, ${state.pending.length} restantes.`)
   } else {
     console.log(`▶ Nova captura dos ${NUM_POSTS} posts recentes...`)
-    const ids = await getPostIds(ctx, dsUserId, NUM_POSTS)
+    let ids = await getPostIds(ctx, dsUserId, NUM_POSTS)
     if (!ids.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
+    // Filtro "dessa semana": IG_DAYS=7 => so posts dos ultimos 7 dias.
+    const DIAS = Math.max(0, parseInt(process.env.IG_DAYS || '0', 10))
+    if (DIAS > 0) {
+      const corte = Math.floor(Date.now() / 1000) - DIAS * 86400
+      const antes = ids.length
+      ids = ids.filter((p) => (p.taken_at || 0) >= corte)
+      console.log(`  filtro ${DIAS}d: ${ids.length}/${antes} posts dentro da janela.`)
+    }
+    if (!ids.length) { console.log('  Nenhum post na janela de data.'); escreverStatus(true, null); await ctx.close(); process.exit(0) }
     state = { contagem: {}, perfis: {}, porPost: {}, done: [], pending: ids, followers: null, following: null }; saveState(state)
     console.log(`  ${ids.length} posts na fila.`)
   }
@@ -409,11 +445,11 @@ async function main() {
   let desdeUltimaPausa = 0
   while (state.pending.length) {
     const post = state.pending[0]
-    let res = await getLikersDOM(page, post.code)
-    // 1 retry em caso de hiccup (post carregou devagar -> sem_dialog/0 curtidores)
-    if (!res.rateLimited && (!res.users || !res.users.length) && res.error === 'sem_dialog') {
-      await sleep(rand(3000, 5000))
-      res = await getLikersDOM(page, post.code)
+    let res = await capturarLikers(page, post.pk, post.code)
+    // 1 retry em caso de hiccup (0 curtidores / falha pontual)
+    if (!res.rateLimited && (!res.users || !res.users.length) && res.error) {
+      await sleep(rand(2000, 4000))
+      res = await capturarLikers(page, post.pk, post.code)
     }
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
     const nomes = []
@@ -427,9 +463,9 @@ async function main() {
     state.porPost[post.code || post.pk] = nomes
     state.done.push(post.pk); state.pending.shift(); saveState(state); gravarTudo(state)
     reqCounter.n++
-    console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error}`)
-    await sleep(rand(4000, 9000)) // pausa humana entre posts (4-9s)
-    if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 20s (anti-ban)...'); await sleep(20000) }
+    console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error} (${res.fonte})`)
+    await sleep(rand(2000, 4000)) // pausa humana entre posts (rapida, REST e leve)
+    if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 15s (anti-ban)...'); await sleep(15000) }
   }
 
   // FASE 2: following (quem VOCE segue) — opcional via IG_COLLECT_FOLLOWING
