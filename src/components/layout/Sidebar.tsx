@@ -40,6 +40,7 @@ const nav = [
   { href: '/interacoes', icon: Heart, label: 'Interações' },
   { href: '/posts', icon: Trophy, label: 'Posts' },
   { href: '/curtidores', icon: Heart, label: 'Quem curtiu' },
+  { href: '/pontuacao', icon: Trophy, label: 'Como pontua' },
   { href: '/analise', icon: Brain, label: 'Análise de Conteúdo' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
   { href: '/demandas', icon: FileText, label: 'Demandas' },
