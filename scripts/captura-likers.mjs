@@ -309,13 +309,15 @@ async function likersREST(page, pid) {
     return { users }
   } catch { return { html: true } }
 }
-// Orquestra: REST rapido primeiro; modal (lento, navega) so se REST falhar.
+// Orquestra: REST rapido primeiro; modal (lento) so se REST falhar. Sinaliza
+// restHtml quando o REST devolve HTML (sinal de bloqueio da Meta).
 async function capturarLikers(page, pid, code) {
   const rest = await likersREST(page, pid)
   if (rest.rateLimited) return { rateLimited: true }
   if (rest.users) return { users: rest.users, fonte: 'rest' }
-  const dom = await getLikersDOM(page, code)
-  return { users: dom.users, error: dom.error, fonte: dom.users ? 'dom' : 'erro' }
+  const dom = await getLikersDOM(page, code) // caminho vivo (GraphQL/modal)
+  if (dom.users && dom.users.length) return { users: dom.users, fonte: 'dom' }
+  return { users: dom.users || [], error: dom.error || 'html', restHtml: !!rest.html, fonte: 'erro' }
 }
 
 // FOLLOWERS / FOLLOWING: fetch DENTRO da pagina (autenticado), endpoint
@@ -443,6 +445,9 @@ async function main() {
   // FASE 1: curtidores por post (com atribuicao e perfis ricos)
   const total = state.done.length + state.pending.length
   let desdeUltimaPausa = 0
+  let falhasSeguidas = 0          // detector de BLOQUEIO (HTML/modal vazio)
+  const MAX_FALHAS = Math.max(2, parseInt(process.env.IG_MAX_FALHAS || '3', 10))
+  let likersBloqueado = false
   while (state.pending.length) {
     const post = state.pending[0]
     let res = await capturarLikers(page, post.pk, post.code)
@@ -452,6 +457,22 @@ async function main() {
       res = await capturarLikers(page, post.pk, post.code)
     }
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
+    // ABORT-ON-BLOQUEIO: ao contrario do original (que retenta 5x e MARTELA o
+    // endpoint bloqueado, aprofundando o bloqueio), se varios posts seguidos
+    // falham (REST=HTML + modal vazio), PARAMOS a fase de likers na hora.
+    if (!res.users || !res.users.length) {
+      if (res.error) {
+        falhasSeguidas++
+        if (falhasSeguidas >= MAX_FALHAS) {
+          likersBloqueado = true
+          console.log(`  ⛔ ${falhasSeguidas} posts seguidos sem curtidores (REST=HTML/modal vazio) = BLOQUEIO da Meta em likers.`)
+          console.log('     ABORTANDO a fase de likers pra NAO martelar (evita aprofundar o bloqueio). Esfrie e tente depois.')
+          break
+        }
+      }
+    } else {
+      falhasSeguidas = 0
+    }
     const nomes = []
     if (res.users) for (const u of res.users) {
       const un = typeof u === 'string' ? u : u && u.username
@@ -466,6 +487,15 @@ async function main() {
     console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error} (${res.fonte})`)
     await sleep(rand(2000, 4000)) // pausa humana entre posts (rapida, REST e leve)
     if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 15s (anti-ban)...'); await sleep(15000) }
+  }
+
+  // Se likers bloqueado: para tudo (nao puxa followers/following = nao adiciona
+  // carga numa conta ja estrangulada). Salva o que tem e sai pedindo cooldown.
+  if (likersBloqueado) {
+    gravarTudo(state)
+    escreverStatus(false, 'likers_bloqueado_cooldown')
+    console.log(`⛔ Parado por bloqueio de likers. ${state.done.length} posts processados antes. Esfrie a conta (horas) e rode de novo.`)
+    await ctx.close(); process.exit(3)
   }
 
   // FASE 2: following (quem VOCE segue) — opcional via IG_COLLECT_FOLLOWING
