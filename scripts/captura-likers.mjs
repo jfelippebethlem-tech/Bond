@@ -35,6 +35,18 @@ if (process.env.IG_CAPTURE_LOCAL !== 'true') {
 }
 const NUM_POSTS = Math.max(1, parseInt(process.env.IG_NUM_POSTS || '30', 10))
 const OUT = process.env.LIKERS_OUT_DIR || '.'
+// TRAVA DE PAUSA (controlável pela VM via Syncthing): se existir `.pause_captura` no repo OU na pasta de
+// saída, NÃO toca no IG e sai limpo — rodar com a conta BLOQUEADA só aprofunda o bloqueio (regra #1 anti-ban).
+// Para retomar: apague o arquivo (some sozinho pelo Syncthing quando removido na VM).
+{
+  const _pausas = [path.join(process.cwd(), '.pause_captura'), path.join(OUT, '.pause_captura')]
+  const _pausado = _pausas.find((p) => { try { return fs.existsSync(p) } catch { return false } })
+  if (_pausado) {
+    console.log(`⏸️ PAUSADO (${_pausado}) — captura NÃO vai rodar (IG bloqueado). Apague o arquivo p/ retomar.`)
+    try { fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, 'likers-status.json'), JSON.stringify({ ok: true, erro: 'pausado', quando: new Date().toISOString() })) } catch {}
+    process.exit(0)
+  }
+}
 const PROFILE = process.env.IG_PROFILE_DIR || path.join(process.cwd(), 'ig-profile')
 const INTERATIVO = process.env.IG_INTERACTIVE === 'true'
 const STATE_FILE = path.join(process.cwd(), 'likers-state.json')
