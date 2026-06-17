@@ -1,0 +1,292 @@
+================================================================================
+ REFERÊNCIA — SCRIPT DE CAPTURA DE CURTIDORES DO INSTAGRAM
+ Projeto: Bond  |  Branch: likers-dom-scrape-wip  |  Data: 2026-06-16
+ Arquivo principal: scripts/captura-likers.mjs
+================================================================================
+
+Este documento registra TUDO que foi descoberto, onde erramos e onde acertamos
+ao consertar a captura de "quem curtiu" dos posts do Instagram. Serve de
+referência pra não repetir os erros e entender por que o script é do jeito que é.
+
+
+--------------------------------------------------------------------------------
+1. OBJETIVO
+--------------------------------------------------------------------------------
+Capturar os curtidores dos posts da conta business @depjorgefelippeneto
+(user_id 1985223190), montar um ranking/leaderboard (quem mais curte), e
+entregar pra VM via pasta sincronizada (Syncthing) -> a VM serve no HTTP.
+
+Roda SÓ no desktop (IP residencial). NUNCA na VM (IP de datacenter = ban na hora).
+Usa um perfil de navegador dedicado (C:\jfn\ig-profile) que fica logado.
+
+
+--------------------------------------------------------------------------------
+2. RESUMO EXECUTIVO — O QUE FUNCIONA HOJE
+--------------------------------------------------------------------------------
+- O endpoint REST /api/v1/media/<pk>/likers/ (o método do tool original) está
+  MORTO/BLOQUEADO pra conta business: devolve 200 text/html, não JSON.
+- O método VIVO é o GraphQL que o modal "Curtidas" (liked_by) dispara: a gente
+  abre o modal e ESCUTA a resposta JSON (+ raspa o DOM como reforço).
+- Pela conta business (owner), quando NÃO bloqueada, dá pra pegar TODOS os
+  curtidores. Quando bloqueada (excesso de atividade), precisa esfriar (horas).
+- Workaround: logar numa 2ª conta que enxerga os likers da business e ler de lá
+  (contorna o bloqueio do owner) — MAS a Meta limita não-owner a ~100/post.
+- Saídas vão pra C:\jfn\bond\likers-sync (Syncthing -> VM -> HTTP).
+
+
+--------------------------------------------------------------------------------
+3. DESCOBERTAS TÉCNICAS (as verdades sobre os endpoints)
+--------------------------------------------------------------------------------
+3.1 /api/v1/feed/user/<id>/?count=N   -> FUNCIONA (JSON). Lista posts de qualquer
+    usuário (público). Campos usados: it.pk, it.code (shortcode), it.taken_at.
+
+3.2 /api/v1/media/<pk>/likers/        -> DEVOLVE HTML (200 text/html) pra business.
+    - NÃO é bug nosso. NÃO é Playwright. NÃO é falta de x-csrftoken.
+    - PROVADO: rodamos o método EXATO do original (igFetch, com csrftoken) no
+      CHROME REAL (sem flags de automação, via CDP porta 9222) -> mesmo HTML, 3x.
+    - O feed funciona no mesmo contexto -> a sessão está OK; só o likers é servido
+      como HTML (a Meta migrou/bloqueou esse endpoint REST pra essa conta).
+
+3.3 GraphQL /graphql/query             -> é o caminho VIVO de curtidores. O modal
+    liked_by dispara essa query e a resposta JSON tem os usernames. doc_ids vistos
+    no sniffer: 27258191930500454 e 27228895850083205 (mudam com o tempo).
+
+3.4 /api/v1/friendships/<id>/{followers|following}/?count=200 -> FUNCIONA (JSON),
+    paginado por next_max_id. Observado ~25/página em conta estressada e
+    ~200/página em conta saudável.
+
+3.5 TETO DE NÃO-OWNER (~100): uma 2ª conta que VÊ os likers da business só
+    enxerga ~os primeiros 100-104. O GraphQL para de paginar em ~3 páginas
+    mesmo com scroll agressivo. A lista COMPLETA só pelo OWNER.
+
+
+--------------------------------------------------------------------------------
+4. ONDE ERRAMOS (pra não repetir)
+--------------------------------------------------------------------------------
+4.1 TEORIZAR DEMAIS ANTES DE TESTAR O ORIGINAL.
+    Passamos horas reescrevendo (DOM scraping, caça a doc_id) quando bastava
+    RODAR o tool original (copy-code no console) e ver que ele TAMBÉM bate no
+    HTML. Lição: reproduzir a referência primeiro, na fonte da verdade.
+
+4.2 DIAGNÓSTICO EM CAMADAS LENTAS.
+    Primeiro achamos que era "ctx.request vs in-page"; depois "throttle"; depois
+    "automação". Só o teste no Chrome real fechou: é bloqueio da conta no
+    endpoint de likers. Cada hipótese custou execuções na conta.
+
+4.3 EXCESSO DE EXECUÇÕES NO MESMO DIA = APROFUNDOU O BLOQUEIO.
+    Flood externo de manhã (script de 2663 posts com 5 retries cada) + vários
+    runs nossos + kills/relaunches + benchmarks. A conta, que de manhã entregava
+    curtidores, secou à noite. Atividade acumulada importa.
+
+4.4 RETRY BURRO (herdado do mindset do original).
+    O rateLimitedFetch do original RETENTA 5x (2/4/8/16/32s) em QUALQUER erro,
+    inclusive quando o likers volta HTML (json parse falha). Em centenas de posts
+    bloqueados = milhares de requisições martelando = bloqueio mais longo.
+    >>> Corrigimos com ABORT-ON-BLOQUEIO (ver 5.4).
+
+4.5 BUGS BOBOS:
+    - "| head -60" truncou a saída do sniffer e perdemos o resultado do teste DOM.
+    - ReferenceError: totalPosts no console.log final (variável fora de escopo).
+    - Kill por linha de comando contendo "ig-profile" matava NOSSOS PRÓPRIOS
+      shells (bash/powershell tinham essa string no comando). Filtrar por
+      Name='chrome.exe' resolveu.
+    - "Profile already in use" (lockfile do Chromium) ao matar/relançar rápido.
+      Solução: matar todo chrome do perfil + remover C:\jfn\ig-profile\lockfile
+      antes de relançar.
+
+4.6 SCROLL "MELHORADO" QUE NÃO AJUDOU.
+    Investimos em scroll mais agressivo achando que o teto de 104 era nosso.
+    Não era — é teto do servidor pra não-owner. Mas pelo menos confirmamos.
+
+
+--------------------------------------------------------------------------------
+5. ONDE ACERTAMOS
+--------------------------------------------------------------------------------
+5.1 PROVA EMPÍRICA NO CHROME REAL (CDP).
+    Conectar via connectOverCDP na porta 9222 do Chrome real e rodar o método
+    EXATO do original lá dentro foi o que fechou o diagnóstico de uma vez.
+
+5.2 MÉTODO VIVO: ESCUTAR O GRAPHQL DO MODAL + RASPAR O DOM.
+    Em vez do REST morto, abrimos o liked_by e capturamos a resposta JSON do
+    /graphql/query (perfis ricos: username, full_name, is_verified, is_private,
+    pk). DOM do modal como reforço. Pegou curtidores de verdade.
+
+5.3 WORKAROUND DA 2ª CONTA (IG_TARGET_USER).
+    Logar numa 2ª conta e ler os likers dos posts da business. Funciona e NÃO
+    depende do owner desbloqueado. Limitação: teto ~100/post (não-owner).
+
+5.4 ABORT-ON-BLOQUEIO (o oposto do original).
+    Se N posts seguidos vêm sem curtidores (REST=HTML + modal vazio), PARA a fase
+    de likers na hora e NÃO puxa followers/following. Não martela = não aprofunda
+    o bloqueio. Env IG_MAX_FALHAS (default 3). Status 'likers_bloqueado_cooldown'.
+
+5.5 SÓ A SEMANA (IG_DAYS=7).
+    O original puxa TODO o histórico (vimos 1248 posts). Nós filtramos por data:
+    ~6 posts/semana = ~200x menos requisições. Muito mais seguro.
+
+5.6 RITMO HUMANO (TEMPOS ALEATÓRIOS).
+    Pausa entre posts aleatória (6-20s), descanso longo aleatório (45-150s) a cada
+    3-7 posts, warmup inicial, jitter na paginação. Variância alta = sem padrão
+    pra Meta pegar. Ajustável no .env.
+
+5.7 COMPATIBILIDADE + LEADERBOARD COMPLETO.
+    likers.json mantém o formato antigo [{username,curtidas}] (o importador da VM
+    não quebra). Replicamos a lógica do original: % de engajamento, rank, abas
+    following/not-following, e as 4 categorias de follower-analysis
+    (dont_follow_back, not_following_back, mutual, ghost).
+
+
+--------------------------------------------------------------------------------
+6. ARQUITETURA FINAL DO SCRIPT (scripts/captura-likers.mjs)
+--------------------------------------------------------------------------------
+FASE 0  login: usa o perfil salvo; IG_INTERACTIVE=true espera você logar (5 min).
+FASE 1  posts: getPostIds(feed do alvo) -> filtra por IG_DAYS.
+FASE 2  likers por post: capturarLikers()
+          1) likersREST  -> fetch REST in-page (rápido). Se JSON, usa.
+          2) se HTML      -> getLikersDOM (abre modal, escuta GraphQL + raspa DOM)
+          - perfis ricos, atribuição por post (quem curtiu QUAL post)
+          - ABORT-ON-BLOQUEIO se muitos posts seguidos falham
+          - ritmo humano entre posts
+FASE 3  following + FASE 4 followers (só se NÃO for modo conta-alvo):
+          coletarLista() paginado, com jitter e descansos.
+SAÍDA   gravarTudo(): escreve todos os arquivos no LIKERS_OUT_DIR.
+
+Funções-chave:
+  getPostIds(ctx, targetUser, n)   -> [{pk, code, taken_at}]
+  likersREST(page, pid)            -> {users:[perfis]} | {html:true} | {rateLimited}
+  getLikersDOM(page, code)         -> escuta GraphQL + scroll do modal
+  capturarLikers(page, pid, code)  -> orquestra REST->DOM, sinaliza restHtml
+  coletarLista(page, ds, tipo,...) -> followers/following paginado
+  gravarTudo(state)                -> todas as saídas (compat + leaderboard)
+
+
+--------------------------------------------------------------------------------
+7. ANTI-BAN / RATE LIMIT — LIÇÕES PRÁTICAS
+--------------------------------------------------------------------------------
+NÃO TEM "BYPASS" de bloqueio da Meta. Dá pra EVITAR disparar e RECUPERAR rápido:
+  (a) ABORTAR ao detectar HTML (nunca martelar endpoint bloqueado). #1 regra.
+  (b) Tempos ALEATÓRIOS e com folga (parecer humano, sem padrão).
+  (c) Pouca FREQUÊNCIA: 1 run/semana (cron de sexta), não vários por dia.
+  (d) ESPALHAR volume: só a semana; se precisar tudo, N posts/dia ao longo de dias.
+  (e) Read-only no SEU conteúdo (curtidores dos seus posts) é baixo risco;
+      ações de escrita (seguir/curtir em massa) é o que queima conta.
+O que o ORIGINAL faz de rate limit (e o defeito): cooldown global 30s a cada 65
+req; 429->pausa 60s; 401/403->para; QUALQUER outro erro->RETENTA 5x. O retry em
+cima de HTML é o que amplifica bloqueio. Nós fazemos o oposto: abortar.
+
+
+--------------------------------------------------------------------------------
+8. ROTA DA 2ª CONTA (workaround) + O TETO
+--------------------------------------------------------------------------------
+Quando a business (owner) está bloqueada nos likers, uma 2ª conta que enxerga os
+curtidores consegue lê-los (modal/GraphQL). Como configurar:
+  - perfil separado:        IG_PROFILE_DIR='C:\jfn\ig-profile-2'
+  - alvo = business:        IG_TARGET_USER=1985223190
+  - login interativo 1x:    IG_INTERACTIVE=true (loga a 2ª conta)
+  - followers/following OFF (automático em modo conta-alvo)
+RESULTADO MEDIDO: ~104 curtidores/post (TETO da Meta pra não-owner; o GraphQL para
+de paginar em ~3 páginas). 459-460 únicos numa semana de 6 posts.
+A lista COMPLETA só pelo owner (sem IG_TARGET_USER), pós-cooldown.
+
+
+--------------------------------------------------------------------------------
+9. COMO RODAR
+--------------------------------------------------------------------------------
+PRÉ: .env com IG_CAPTURE_LOCAL=true, IG_PROFILE_DIR, LIKERS_OUT_DIR.
+
+OWNER (pega TUDO; rodar só com a conta esfriada, sem IG_TARGET_USER):
+  IG_DAYS=7 node scripts/captura-likers.mjs
+
+2ª CONTA (amostra ~100/post; contorna bloqueio do owner):
+  IG_PROFILE_DIR='C:\jfn\ig-profile-2' IG_TARGET_USER=1985223190 \
+  IG_INTERACTIVE=true IG_DAYS=7 IG_COLLECT_FOLLOWERS=false \
+  IG_COLLECT_FOLLOWING=false node scripts/captura-likers.mjs
+
+VARIÁVEIS DE AMBIENTE:
+  IG_DAYS=7            só posts dos últimos 7 dias (0 = todos)
+  IG_NUM_POSTS=40      teto de posts a buscar antes do filtro de data
+  IG_TARGET_USER=...   mira posts/likers de OUTRA conta (modo 2ª conta)
+  IG_COLLECT_FOLLOWERS / IG_COLLECT_FOLLOWING = false  (desliga essas fases)
+  IG_FOLLOW_LIMIT=0    teto de followers/following (0 = todos)
+  IG_MAX_FALHAS=3      aborta após N posts seguidos sem curtidores (bloqueio)
+  IG_PAUSA_MIN/MAX     pausa entre posts (ms) — default 6000/20000
+  IG_DESCANSO_MIN/MAX  descanso longo (ms) — default 45000/150000
+  IG_SCROLL_MAX=200    máx iterações de scroll do modal
+  IG_INTERACTIVE=true  espera login manual na janela
+  IG_DEBUG=true        loga [DOM=.. API=.. graphqlCaps=..] por post
+
+DIAGNÓSTICO (tooling criado):
+  scripts/bench-likers.mjs       REST original (csrf) vs nosso, lado a lado
+  scripts/bench-cdp.mjs          conecta no Chrome real (9222) e testa likers
+  scripts/investiga-cap.mjs      inspeciona o teto/paginação do GraphQL
+  Chrome real com debug:
+    chrome.exe --remote-debugging-port=9222 --user-data-dir=C:\jfn\ig-profile
+
+
+--------------------------------------------------------------------------------
+10. SAÍDAS (em LIKERS_OUT_DIR = C:\jfn\bond\likers-sync -> Syncthing -> VM -> HTTP)
+--------------------------------------------------------------------------------
+  likers.json              [{username,curtidas}]  <- COMPAT com o importador da VM
+  likers.csv               idem em csv
+  likers-detalhado.json    rank, %, full_name, verified, te_segue, voce_segue,
+                           posts_curtidos
+  posts-curtidores.json    post -> lista de quem curtiu (atribuição)
+  leaderboard.csv          Rank,Username,Full Name,Likes,Total Posts,Percentage,..
+  leaderboard-seguindo.json / leaderboard-nao-seguindo.json   (abas)
+  follower-analysis.json   dont_follow_back / not_following_back / mutual / ghost
+  followers.json / following.json
+  likers-status.json       {ok, erro, quando}  <- a VM lê pra avisar no Telegram
+(Os arquivos de follower-analysis/leaderboard só são gerados quando há
+followers/following — ou seja, NÃO no modo 2ª conta.)
+
+
+--------------------------------------------------------------------------------
+11. COMPARAÇÃO COM O ORIGINAL (github.com/Sagargupta16/InstagramLikesLeaderboard)
+--------------------------------------------------------------------------------
+- É um app web (Vite/React) que você cola no console do IG (copy-code de
+  sagargupta.online/InstagramLikesLeaderboard). RODA em 4 passos: Posts ->
+  Likes -> Following -> Followers. Salva em localStorage 'ill_scan_results' SÓ no
+  fim. Bundle de 85KB.
+- Usa o REST /api/v1/media/<id>/likers/ (que está MORTO pra essa conta -> ele
+  daria o erro "Unexpected token '<'" no Step 2, que foi o 1º bug relatado).
+- Puxa o histórico INTEIRO de posts (lento; vimos 1248). Nós: só a semana.
+- O retry-5x dele amplifica bloqueio; nós abortamos.
+- O QUE PEGAMOS DELE (e replicamos): % de engajamento, rank, abas
+  following/not-following, 4 categorias de follower-analysis, colunas do CSV.
+- O QUE TEMOS A MAIS: método GraphQL/modal (vivo), workaround de 2ª conta,
+  abort-on-bloqueio, ritmo humano, filtro por data.
+
+
+--------------------------------------------------------------------------------
+12. PENDÊNCIAS / PRÓXIMOS PASSOS
+--------------------------------------------------------------------------------
+- [ ] Rodar pela conta PRINCIPAL (owner) pós-cooldown, sem IG_TARGET_USER, pra
+      pegar TODOS os curtidores (sem teto de 104). Usar ritmo humano.
+- [ ] Validar que, com o owner desbloqueado, o REST volta a dar JSON (aí fica
+      rápido: 1 chamada/post pega tudo) OU o modal pagina completo.
+- [ ] Regerar follower-analysis/leaderboard com listas completas (IG_FOLLOW_LIMIT=0).
+- [ ] Considerar capturar o GraphQL de likers DIRETO (com cursor) pra paginar
+      além do modal — só vale pro owner (não-owner tem teto de servidor).
+- [ ] Avaliar mover a captura pro cron semanal (sexta) com o ritmo humano.
+
+
+--------------------------------------------------------------------------------
+13. HISTÓRICO DE COMMITS DA BRANCH (likers-dom-scrape-wip)
+--------------------------------------------------------------------------------
+ dd6f7fe  wip: scraper de DOM + diagnostico do endpoint REST morto
+ 05e8c16  docs: descobertas do sniffer - REST morto, GraphQL vivo
+ bbdfd5f  wip: metodo escuta-GraphQL + DOM; parado no teto anti-ban
+ 604f1c0  fix: anexa listener de response ANTES do goto (licao da #5)
+ 97025fc  fix: captura funcionando via escuta da resposta GraphQL + retry
+ f9aa5e2  feat: agrega funcoes do InstagramLikesLeaderboard
+ 9a3d208  feat: replica fiel do InstagramLikesLeaderboard (logica do repo)
+ 3bc5fa5  fix: corrige ReferenceError totalPosts no log final
+ 1dd5cbc  perf: metodo REST-first (igual ao original) + modal como fallback
+ faa54ca  feat: abort-on-bloqueio (anti-rate-limit) + tooling de benchmark
+ 7d88d15  feat: ritmo humano (tempos aleatorios) + conta-alvo + scroll persistente
+
+================================================================================
+ FIM. Em caso de bloqueio: PARE, espere esfriar (horas), e rode devagar/humano.
+ Nunca martele o endpoint quando vier HTML — é o que transforma bloqueio curto
+ em bloqueio longo.
+================================================================================
