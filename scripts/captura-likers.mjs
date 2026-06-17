@@ -10,6 +10,17 @@
 // .env LOCAL (desktop): IG_CAPTURE_LOCAL=true, IG_NUM_POSTS=30,
 //   LIKERS_OUT_DIR=C:\jfn\likers-sync, IG_PROFILE_DIR=C:\jfn\ig-profile,
 //   IG_INTERACTIVE=true (quando rodado por voce, pra poder logar)
+//
+// AGREGA AS FUNCOES DO InstagramLikesLeaderboard:
+//   - curtidores por post (atribuicao: quem curtiu QUAL post) + perfis ricos
+//   - followers + following + insights de relacionamento
+// Flags opcionais no .env:
+//   IG_COLLECT_FOLLOWERS=false  -> nao coleta seguidores (menos chamadas)
+//   IG_COLLECT_FOLLOWING=false  -> nao coleta quem voce segue
+//   IG_FOLLOW_LIMIT=2000        -> teto de seguidores/seguindo (0 = todos)
+// Saidas em LIKERS_OUT_DIR: likers.json (compat), likers.csv,
+//   likers-detalhado.json, posts-curtidores.json, followers.json,
+//   following.json, insights.json
 import 'dotenv/config'
 import fs from 'fs'
 import path from 'path'
@@ -32,11 +43,44 @@ const saveState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s))
 function escreverStatus(ok, erro) {
   try { fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, 'likers-status.json'), JSON.stringify({ ok, erro: erro || null, quando: new Date().toISOString() })) } catch {}
 }
-function gravarSaida(contagem) {
-  const ranking = Object.entries(contagem).map(([username, curtidas]) => ({ username, curtidas })).sort((a, b) => b.curtidas - a.curtidas)
+// Escreve TODAS as saidas a partir do state. likers.json/.csv mantem o formato
+// antigo [{username,curtidas}] (compat com o importador da VM). O resto e novo.
+function gravarTudo(state) {
   fs.mkdirSync(OUT, { recursive: true })
+  const contagem = state.contagem || {}
+  const ranking = Object.entries(contagem).map(([username, curtidas]) => ({ username, curtidas })).sort((a, b) => b.curtidas - a.curtidas)
+  // 1) compat: ranking simples
   fs.writeFileSync(path.join(OUT, 'likers.json'), JSON.stringify(ranking, null, 2))
   fs.writeFileSync(path.join(OUT, 'likers.csv'), 'username,curtidas\n' + ranking.map((r) => `${r.username},${r.curtidas}`).join('\n'))
+  // 2) atribuicao por post (quem curtiu qual post) + inverso (cada user -> posts)
+  const porPost = state.porPost || {}
+  fs.writeFileSync(path.join(OUT, 'posts-curtidores.json'), JSON.stringify(porPost, null, 2))
+  const userPosts = {}
+  for (const [code, us] of Object.entries(porPost)) for (const u of us) (userPosts[u] = userPosts[u] || []).push(code)
+  // 3) detalhado: perfil rico + relacao + posts que curtiu
+  const followersSet = new Set((state.followers || []).map((u) => u.username))
+  const followingSet = new Set((state.following || []).map((u) => u.username))
+  const perfis = state.perfis || {}
+  const detalhado = ranking.map((r) => {
+    const p = perfis[r.username] || {}
+    return { username: r.username, curtidas: r.curtidas, full_name: p.full_name || '', is_verified: !!p.is_verified, is_private: !!p.is_private, pk: p.pk || '', te_segue: followersSet.has(r.username), voce_segue: followingSet.has(r.username), posts_curtidos: userPosts[r.username] || [] }
+  })
+  fs.writeFileSync(path.join(OUT, 'likers-detalhado.json'), JSON.stringify(detalhado, null, 2))
+  // 4) listas brutas
+  if (state.followers) fs.writeFileSync(path.join(OUT, 'followers.json'), JSON.stringify(state.followers, null, 2))
+  if (state.following) fs.writeFileSync(path.join(OUT, 'following.json'), JSON.stringify(state.following, null, 2))
+  // 5) insights de relacionamento (so quando temos as listas)
+  if (state.followers || state.following) {
+    const likers = Object.keys(contagem)
+    const insights = {
+      gerado_em: new Date().toISOString(),
+      fas_que_te_seguem: likers.filter((u) => followersSet.has(u)),                 // curtem E te seguem
+      curtem_mas_nao_te_seguem: likers.filter((u) => !followersSet.has(u)),         // curtem sem te seguir (fas externos)
+      te_segue_voce_nao_segue: (state.followers || []).map((u) => u.username).filter((u) => !followingSet.has(u)),
+      voce_segue_nao_te_segue: (state.following || []).map((u) => u.username).filter((u) => !followersSet.has(u)),
+    }
+    fs.writeFileSync(path.join(OUT, 'insights.json'), JSON.stringify(insights, null, 2))
+  }
   return ranking
 }
 async function dsUserIdDo(ctx) {
@@ -122,19 +166,28 @@ async function getLikers(page, pid) {
 // e lemos os usernames. Fallback: scrape do DOM do modal. Imune a endpoint REST
 // morto e nao precisa forjar tokens (fb_dtsg/lsd) do GraphQL.
 const NAO_USER = new Set(['explore', 'reels', 'reel', 'direct', 'accounts', 'p', 'stories', 'about', 'legal', 'privacy', 'tv', 'emails'])
-function coletarUsernames(json, sink) {
+// Caminha o JSON e coleta PERFIS ricos (nao so username): full_name, verificado,
+// privado, pk. Alimenta um Map username->perfil (mescla campos quando reaparece).
+function coletarUsuarios(json, mapa) {
   const pilha = [json]
   while (pilha.length) {
     const n = pilha.pop()
     if (n && typeof n === 'object') {
-      if (typeof n.username === 'string' && n.username) sink.add(n.username)
+      if (typeof n.username === 'string' && n.username && !NAO_USER.has(n.username)) {
+        const p = mapa.get(n.username) || { username: n.username }
+        if (n.full_name != null) p.full_name = n.full_name
+        if (n.is_verified != null) p.is_verified = !!n.is_verified
+        if (n.is_private != null) p.is_private = !!n.is_private
+        if (n.pk != null || n.id != null) p.pk = String(n.pk || n.id)
+        mapa.set(n.username, p)
+      }
       for (const k in n) { const v = n[k]; if (v && typeof v === 'object') pilha.push(v) }
     }
   }
 }
 async function getLikersDOM(page, code) {
   if (!code) return { error: 'sem_code' }
-  const viaApi = new Set()
+  const apiMap = new Map() // username -> perfil rico (vindo do /graphql/query)
   let capturas = 0
   let escutandoLikers = false // so coleta DEPOIS de abrir o modal (evita comentaristas)
   const onResp = async (resp) => {
@@ -143,7 +196,7 @@ async function getLikersDOM(page, code) {
     if (!/graphql\/query|\/likers\b|liked_by/i.test(u)) return
     const ct = resp.headers()['content-type'] || ''
     if (!ct.includes('json')) return
-    try { const j = await resp.json(); capturas++; coletarUsernames(j, viaApi) } catch {}
+    try { const j = await resp.json(); capturas++; coletarUsuarios(j, apiMap) } catch {}
   }
   // 1) Listener anexado ANTES do goto (como no sniffer #3, que capturou o GraphQL).
   //    Na #5 o listener foi anexado depois do goto e nao capturou nada.
@@ -182,18 +235,53 @@ async function getLikersDOM(page, code) {
       if (sc) sc.scrollTop = sc.scrollHeight
     }).catch(() => {})
     await page.waitForTimeout(rand(1100, 2100))
-    const tot = viaApi.size + viaDom.size
+    const tot = apiMap.size + viaDom.size
     if (tot === prev) estavel++; else { estavel = 0; prev = tot }
   }
   page.off('response', onResp)
-  // Prioriza o modal (limpo). So cai pra API (escutada APOS abrir os curtidores)
-  // se o modal nao renderizou.
-  let fonte = 'dom', base = viaDom
-  if (!viaDom.size && viaApi.size) { fonte = 'api', base = viaApi }
-  const todos = new Set(base); NAO_USER.forEach((x) => todos.delete(x))
-  if (process.env.IG_DEBUG === 'true') console.log(`    [fonte=${fonte} DOM=${viaDom.size} API=${viaApi.size} graphqlCaps=${capturas}]`)
+  // Uniao das duas fontes: DOM do modal (limpo) + API (perfis ricos). Cada
+  // username vira um perfil; quando a API tem dados, usa-os; senao, so o nome.
+  const todos = new Set([...viaDom, ...apiMap.keys()])
+  NAO_USER.forEach((x) => todos.delete(x))
+  if (process.env.IG_DEBUG === 'true') console.log(`    [DOM=${viaDom.size} API=${apiMap.size} graphqlCaps=${capturas}]`)
   if (!todos.size) return { error: 'sem_dialog' }
-  return { users: [...todos] }
+  const users = [...todos].map((un) => apiMap.get(un) || { username: un })
+  return { users }
+}
+
+// FOLLOWERS / FOLLOWING: fetch DENTRO da pagina (autenticado), endpoint
+// /friendships/<id>/{followers|following}/?count=200, paginado por next_max_id.
+// limite=0 => todos. reqCounter compartilhado pro cooldown global anti-ban.
+async function coletarLista(page, dsUserId, tipo, limite, reqCounter) {
+  const users = new Map()
+  let maxId = null, pag = 0
+  while (true) {
+    let url = `https://www.instagram.com/api/v1/friendships/${dsUserId}/${tipo}/?count=200`
+    if (maxId) url += `&max_id=${encodeURIComponent(maxId)}`
+    const out = await page.evaluate(async (url) => {
+      try {
+        const resp = await fetch(url, { credentials: 'include', headers: { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest' } })
+        const ct = resp.headers.get('content-type') || ''
+        return { status: resp.status, ct, text: await resp.text() }
+      } catch (e) { return { status: -1, ct: '', text: String(e && e.message || e) } }
+    }, url)
+    reqCounter.n++
+    if (out.status === 429) { console.log(`  429 em ${tipo} — pausa 60s (estado salvo).`); await sleep(60000); continue }
+    if (out.status !== 200 || !out.ct.includes('json')) { console.log(`  ${tipo}: resposta nao-JSON (${out.status} ${out.ct.split(';')[0]}) — parando aqui.`); break }
+    let d; try { d = JSON.parse(out.text) } catch { break }
+    for (const u of (d.users || [])) {
+      if (!u.username || NAO_USER.has(u.username)) continue
+      users.set(u.username, { username: u.username, full_name: u.full_name || '', is_verified: !!u.is_verified, is_private: !!u.is_private, pk: String(u.pk || '') })
+    }
+    pag++
+    console.log(`  ${tipo}: ${users.size} coletados (pag ${pag})`)
+    if (limite && users.size >= limite) break
+    maxId = d.next_max_id
+    if (!maxId) break
+    await sleep(rand(1500, 3000))
+    if (reqCounter.n % 60 === 0) { console.log('  💤 cooldown global 30s (anti-ban)...'); await sleep(30000) }
+  }
+  return [...users.values()]
 }
 
 async function main() {
@@ -265,10 +353,16 @@ async function main() {
     console.log(`▶ Nova captura dos ${NUM_POSTS} posts recentes...`)
     const ids = await getPostIds(ctx, dsUserId, NUM_POSTS)
     if (!ids.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
-    state = { contagem: {}, done: [], pending: ids }; saveState(state)
+    state = { contagem: {}, perfis: {}, porPost: {}, done: [], pending: ids, followers: null, following: null }; saveState(state)
     console.log(`  ${ids.length} posts na fila.`)
   }
+  // saneia state retomado de versoes antigas
+  state.perfis = state.perfis || {}; state.porPost = state.porPost || {}
 
+  const reqCounter = { n: 0 }
+  const FOLLOW_LIMIT = Math.max(0, parseInt(process.env.IG_FOLLOW_LIMIT || '0', 10)) // 0 = todos
+
+  // FASE 1: curtidores por post (com atribuicao e perfis ricos)
   const total = state.done.length + state.pending.length
   let desdeUltimaPausa = 0
   while (state.pending.length) {
@@ -280,19 +374,41 @@ async function main() {
       res = await getLikersDOM(page, post.code)
     }
     if (res.rateLimited) { console.log('  429 — pausa 60s (estado salvo).'); saveState(state); await sleep(60000); continue }
-    if (res.users) for (const u of res.users) state.contagem[u] = (state.contagem[u] || 0) + 1
-    state.done.push(post.pk); state.pending.shift(); saveState(state); gravarSaida(state.contagem)
-    console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? res.users.length + ' curtidores' : 'erro ' + res.error}`)
+    const nomes = []
+    if (res.users) for (const u of res.users) {
+      const un = typeof u === 'string' ? u : u && u.username
+      if (!un) continue
+      nomes.push(un)
+      state.contagem[un] = (state.contagem[un] || 0) + 1
+      if (u && typeof u === 'object') state.perfis[un] = { ...(state.perfis[un] || {}), ...u }
+    }
+    state.porPost[post.code || post.pk] = nomes
+    state.done.push(post.pk); state.pending.shift(); saveState(state); gravarTudo(state)
+    reqCounter.n++
+    console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error}`)
     await sleep(rand(4000, 9000)) // pausa humana entre posts (4-9s)
-    // Trava anti-ban: a cada 6 posts, pausa longa (igual ao Leaderboard).
     if (++desdeUltimaPausa >= 6) { desdeUltimaPausa = 0; console.log('  💤 pausa de 20s (anti-ban)...'); await sleep(20000) }
   }
 
+  // FASE 2: following (quem VOCE segue) — opcional via IG_COLLECT_FOLLOWING
+  if (process.env.IG_COLLECT_FOLLOWING !== 'false' && !state.following) {
+    console.log('▶ Coletando following (quem voce segue)...')
+    try { state.following = await coletarLista(page, dsUserId, 'following', FOLLOW_LIMIT, reqCounter) } catch (e) { console.log('  following falhou:', e.message) }
+    saveState(state); gravarTudo(state)
+  }
+  // FASE 3: followers (quem te segue) — opcional via IG_COLLECT_FOLLOWERS
+  if (process.env.IG_COLLECT_FOLLOWERS !== 'false' && !state.followers) {
+    console.log('▶ Coletando followers (quem te segue)...')
+    try { state.followers = await coletarLista(page, dsUserId, 'followers', FOLLOW_LIMIT, reqCounter) } catch (e) { console.log('  followers falhou:', e.message) }
+    saveState(state); gravarTudo(state)
+  }
+
   await ctx.close()
-  const ranking = gravarSaida(state.contagem)
+  const ranking = gravarTudo(state)
   escreverStatus(true, null)
   try { fs.unlinkSync(STATE_FILE) } catch {}
-  console.log(`✅ Completo. ${ranking.length} curtidores em ${OUT}/likers.json`)
+  console.log(`✅ Completo. ${ranking.length} curtidores | ${state.followers ? state.followers.length : '-'} followers | ${state.following ? state.following.length : '-'} following`)
+  console.log(`   Saidas em ${OUT}: likers.json, likers-detalhado.json, posts-curtidores.json, followers.json, following.json, insights.json`)
   console.log('Top 10:', ranking.slice(0, 10).map((r) => `${r.username}(${r.curtidas})`).join(', '))
 }
 main().catch((e) => { console.error(e); escreverStatus(false, 'erro: ' + (e.message || e)); process.exit(1) })
