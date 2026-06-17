@@ -157,7 +157,7 @@ export default function InteracoesPage() {
       {(stats.like === 0 && stats.share === 0 && stats.comment > 0) && (
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-5">
           <Activity size={14} className="text-gray-400 mt-0.5 shrink-0" />
-          <span>No <b>Instagram</b>, a API só identifica <b>quem comentou</b> — a plataforma não revela <b>quem curtiu ou compartilhou</b> cada post (só o número total, visível na aba Posts). Curtidas/compartilhamentos por pessoa aparecem aqui quando o <b>Facebook</b> e o <b>Twitter/X</b> estiverem conectados.</span>
+          <span>No <b>Instagram</b>, a Graph API só identifica <b>quem comentou</b>. <b>Quem curtiu</b> é capturado à parte pelo coletor do desktop (IP residencial, conta principal) e aparece na aba <b>Curtidores</b> (ranking de quem mais curte). Já <b>quem compartilhou</b> a Meta <b>não revela em lugar nenhum</b> — só o número total (aba Posts). Reshares em <b>Stories</b> (quem colocou seu post no story) só são visíveis ao dono — em avaliação. No <b>Facebook</b> e <b>Twitter/X</b>, curtidas/compartilhamentos por pessoa aparecem aqui quando conectados.</span>
         </div>
       )}
 
