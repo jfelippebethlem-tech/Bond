@@ -43,6 +43,22 @@ const rand = (a, b) => a + Math.random() * (b - a)
 const loadState = () => { try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')) } catch { return null } }
 const saveState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s))
 
+// LEDGER PERSISTENTE (sobrevive entre runs, ≠ STATE_FILE que é por-run e some no fim):
+// registra os posts de BACKFILL já capturados (pk -> ts) p/ o run seguinte pegar o
+// PRÓXIMO lote por data, sem repetir. Os 10 mais recentes são SEMPRE re-rodados.
+const LEDGER_FILE = path.join(OUT, 'captura-ledger.json')
+const loadLedger = () => { try { return JSON.parse(fs.readFileSync(LEDGER_FILE, 'utf8')) } catch { return { done: {} } } }
+const saveLedger = (l) => { try { fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(LEDGER_FILE, JSON.stringify(l)) } catch {} }
+// Janela "desde": IG_SINCE=YYYY-MM-DD (default 1º/jan/2026) → epoch segundos.
+function sinceTsDoEnv() {
+  const s = (process.env.IG_SINCE || '2026-01-01').trim()
+  const ms = Date.parse(s + 'T00:00:00Z')
+  return Number.isFinite(ms) ? Math.floor(ms / 1000) : Math.floor(Date.parse('2026-01-01T00:00:00Z') / 1000)
+}
+const N_RECENT = Math.max(0, parseInt(process.env.IG_RECENT || '10', 10))   // recentes sempre re-rodados
+const MODE = (process.env.IG_MODE || 'manha').trim()                         // 'manha' | 'noite'
+const COLETAR_STORIES = process.env.IG_STORIES === 'true'                    // captura reshares de stories (experimental)
+
 function escreverStatus(ok, erro) {
   try { fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, 'likers-status.json'), JSON.stringify({ ok, erro: erro || null, quando: new Date().toISOString() })) } catch {}
 }
@@ -123,6 +139,30 @@ function gravarTudo(state) {
       detalhado.map((e) => `${e.rank},${esc(e.username)},${esc(e.full_name)},${e.likesCount},${e.totalPosts},${e.percentage}%,${e.voce_segue},${e.te_segue}`).join('\n')
     fs.writeFileSync(path.join(OUT, 'leaderboard.csv'), csv)
   }
+
+  // 6) META por post (p/ as tabelas do site): URL clicável + 5 palavras da legenda + contagens
+  const postMeta = state.postMeta || {}
+  const postsTabela = Object.keys({ ...porPost, ...postMeta }).map((code) => ({
+    code,
+    url: (postMeta[code] && postMeta[code].url) || `https://www.instagram.com/p/${code}/`,
+    legenda: (postMeta[code] && postMeta[code].legenda) || '',
+    taken_at: (postMeta[code] && postMeta[code].taken_at) || 0,
+    curtidas: (porPost[code] || []).length,
+    stories: ((state.storiesPorPost || {})[code] || []).length,
+  })).sort((a, b) => (b.taken_at || 0) - (a.taken_at || 0))
+  fs.writeFileSync(path.join(OUT, 'posts-meta.json'), JSON.stringify(postsTabela, null, 2))
+
+  // 7) STORIES (experimental): leaderboard de quem mais RESHAROU seu post no story
+  const sContagem = state.storiesContagem || {}
+  const sPerfis = state.storiesPerfis || {}
+  const storiesLb = Object.entries(sContagem).map(([username, stories]) => {
+    const p = sPerfis[username] || {}
+    return { rank: 0, username, stories, full_name: p.full_name || '', is_verified: !!p.is_verified, pk: p.pk || '' }
+  }).sort((a, b) => b.stories - a.stories)
+  storiesLb.forEach((e, i) => { e.rank = i + 1 })
+  fs.writeFileSync(path.join(OUT, 'stories-leaderboard.json'), JSON.stringify(storiesLb, null, 2))
+  fs.writeFileSync(path.join(OUT, 'stories-por-post.json'), JSON.stringify(state.storiesPorPost || {}, null, 2))
+
   return ranking
 }
 async function dsUserIdDo(ctx) {
@@ -146,21 +186,42 @@ async function igHeaders(ctx) {
   const csrf = (c.find((x) => x.name === 'csrftoken') || {}).value || ''
   return { 'x-ig-app-id': '936619743392459', 'x-requested-with': 'XMLHttpRequest', 'x-csrftoken': csrf }
 }
-async function getPostIds(ctx, dsUserId, numPosts) {
+// Primeiras N palavras da legenda (p/ a tabela do site). Limpa quebras de linha.
+function primeirasPalavras(txt, n = 5) {
+  return String(txt || '').replace(/\s+/g, ' ').trim().split(' ').filter(Boolean).slice(0, n).join(' ')
+}
+// Busca posts do feed. Se `sinceTs` (epoch s) > 0, pagina ATÉ alcançar posts mais
+// antigos que essa data (janela "desde 1º/jan") — ignora `numPosts` como teto.
+// Senão, para em `numPosts`. Cada item traz pk, code, taken_at, url e legenda (5 palavras).
+async function getPostIds(ctx, dsUserId, numPosts, sinceTs = 0) {
   const headers = await igHeaders(ctx)
-  const ids = []; let maxId = null
-  while (ids.length < numPosts) {
+  const ids = []; let maxId = null; let paginas = 0
+  while (true) {
     let url = `https://www.instagram.com/api/v1/feed/user/${dsUserId}/?count=33`
     if (maxId) url += `&max_id=${maxId}`
     const r = await ctx.request.get(url, { headers })
     if (!r.ok()) break
     const d = await r.json()
-    for (const it of (d.items || [])) ids.push({ pk: String(it.pk || it.id), code: it.code || null, taken_at: it.taken_at || 0 })
+    let atingiuCorte = false
+    for (const it of (d.items || [])) {
+      const ts = it.taken_at || 0
+      const code = it.code || null
+      if (sinceTs && ts && ts < sinceTs) { atingiuCorte = true; continue } // fora da janela: não inclui
+      ids.push({
+        pk: String(it.pk || it.id), code, taken_at: ts,
+        url: code ? `https://www.instagram.com/p/${code}/` : '',
+        legenda: primeirasPalavras((it.caption && it.caption.text) || ''),
+      })
+    }
+    paginas++
+    if (sinceTs) { if (atingiuCorte) break } // alcançou posts antes da janela → para
+    else if (ids.length >= numPosts) break
     if (!d.more_available || !d.next_max_id) break
+    if (paginas >= 60) break // backstop (evita loop infinito)
     maxId = d.next_max_id
     await sleep(rand(2000, 4000))
   }
-  return ids.slice(0, numPosts)
+  return sinceTs ? ids : ids.slice(0, numPosts)
 }
 // Likers: fetch DENTRO da pagina (autenticado, com Referer/sec-fetch same-origin
 // que o IG exige nesse endpoint). O ctx.request cai no roteador HTML do app.
@@ -327,6 +388,50 @@ async function capturarLikers(page, pid, code) {
   return { users: dom.users || [], error: dom.error || 'html', restHtml: !!rest.html, fonte: 'erro' }
 }
 
+// STORIES RESHARERS (EXPERIMENTAL — quem colocou SEU post no story dele). O IG
+// NÃO tem uma lista web estável disso; só o DONO às vezes vê. Estratégia honesta:
+// abrir o post, tentar afford. de "reshares"/"compartilhamentos" e ESCUTAR o
+// /graphql/query por respostas que mencionem reshare/story, coletando usernames
+// SÓ delas (estrito, p/ não contaminar com curtidores/comentaristas). Se nada vier,
+// retorna {error:'sem_reshares_visiveis'} — NUNCA inventa. Só roda com IG_STORIES=true.
+async function getStoryResharers(page, code) {
+  if (!code) return { error: 'sem_code' }
+  const mapa = new Map()
+  let escutando = false, caps = 0
+  const onResp = async (resp) => {
+    if (!escutando) return
+    const u = resp.url()
+    if (!/graphql\/query|reshare|story|stories/i.test(u)) return
+    const ct = resp.headers()['content-type'] || ''
+    if (!ct.includes('json')) return
+    let txt
+    try { txt = await resp.text() } catch { return }
+    // ESTRITO: só trata como reshare se o corpo sinalizar reshare/story-share.
+    if (!/reshare|reshared|story_share|added_to_story|share_to_story/i.test(txt)) return
+    try { coletarUsuarios(JSON.parse(txt), mapa); caps++ } catch {}
+  }
+  page.on('response', onResp)
+  try {
+    await page.goto(`https://www.instagram.com/p/${code}/`, { waitUntil: 'domcontentloaded' })
+    await page.waitForTimeout(rand(2500, 4000))
+    escutando = true
+    // tenta afford. de reshares/compartilhamentos (texto/aria variam muito — best-effort)
+    try {
+      await page.evaluate(() => {
+        const alvo = [...document.querySelectorAll('a,button,div[role="button"],span')]
+          .find((e) => /reshare|compartilhad|adicionad.* story|added to story|stories/i.test((e.innerText || '') + ' ' + (e.getAttribute('aria-label') || '')))
+        if (alvo) alvo.click()
+      })
+    } catch {}
+    await page.waitForTimeout(rand(3000, 5000))
+  } catch {}
+  page.off('response', onResp)
+  const users = [...mapa.values()].filter((p) => p.username && !NAO_USER.has(p.username))
+  if (process.env.IG_DEBUG === 'true') console.log(`    [STORIES caps=${caps} users=${users.length}]`)
+  if (!users.length) return { error: 'sem_reshares_visiveis', experimental: true }
+  return { users, experimental: true }
+}
+
 // FOLLOWERS / FOLLOWING: fetch DENTRO da pagina (autenticado), endpoint
 // /friendships/<id>/{followers|following}/?count=200, paginado por next_max_id.
 // limite=0 => todos. reqCounter compartilhado pro cooldown global anti-ban.
@@ -429,28 +534,40 @@ async function main() {
   if (state && Array.isArray(state.pending) && state.pending.length) {
     console.log(`↺ Retomando: ${state.done.length} feitos, ${state.pending.length} restantes.`)
   } else {
-    // ALVO: por padrao a propria conta logada; mas IG_TARGET_USER permite mirar
-    // OUTRA conta (ex.: logar numa 2a conta que ENXERGA os likers da business e
-    // ler os curtidores dos posts dela, contornando bloqueio do owner).
+    // ALVO: por padrao a propria conta logada; mas IG_TARGET_USER permite mirar OUTRA conta.
     const TARGET = (process.env.IG_TARGET_USER || dsUserId).toString().trim()
     if (TARGET !== dsUserId) console.log(`🎯 Conta-alvo dos posts/likers: ${TARGET} (logado como ${dsUserId})`)
-    console.log(`▶ Nova captura dos ${NUM_POSTS} posts recentes...`)
-    let ids = await getPostIds(ctx, TARGET, NUM_POSTS)
-    if (!ids.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
-    // Filtro "dessa semana": IG_DAYS=7 => so posts dos ultimos 7 dias.
-    const DIAS = Math.max(0, parseInt(process.env.IG_DAYS || '0', 10))
-    if (DIAS > 0) {
-      const corte = Math.floor(Date.now() / 1000) - DIAS * 86400
-      const antes = ids.length
-      ids = ids.filter((p) => (p.taken_at || 0) >= corte)
-      console.log(`  filtro ${DIAS}d: ${ids.length}/${antes} posts dentro da janela.`)
+    const sinceTs = sinceTsDoEnv()
+    console.log(`▶ Janela: posts desde ${process.env.IG_SINCE || '2026-01-01'} · modo=${MODE} · ${NUM_POSTS}/run · ${N_RECENT} recentes sempre · stories=${COLETAR_STORIES}`)
+    // pega a JANELA inteira (todos os posts desde 1º/jan), newest→oldest
+    let janela = await getPostIds(ctx, TARGET, NUM_POSTS, sinceTs)
+    if (!janela.length) { escreverStatus(false, 'sem_posts_ou_sessao_invalida'); await ctx.close(); process.exit(2) }
+    janela.sort((a, b) => (b.taken_at || 0) - (a.taken_at || 0))
+    // RECENTES: os N mais novos — re-rodados TODA vez (curtidas/stories continuam chegando).
+    const recentes = janela.slice(0, N_RECENT)
+    const recentesPk = new Set(recentes.map((p) => p.pk))
+    // BACKFILL: os demais que AINDA não foram capturados (não no ledger), por DATA crescente (de 1º/jan p/ frente).
+    const ledger = loadLedger()
+    const backfill = janela
+      .filter((p) => !recentesPk.has(p.pk) && !ledger.done[p.pk])
+      .sort((a, b) => (a.taken_at || 0) - (b.taken_at || 0))
+    let fila
+    if (MODE === 'noite') {
+      // NOITE: 20 posts que ainda NÃO foram rodados (só backfill por data).
+      fila = backfill.slice(0, NUM_POSTS)
+    } else {
+      // MANHÃ: 10 recentes (curtidas+stories) + completa até 20 com o backfill por data.
+      fila = [...recentes, ...backfill.slice(0, Math.max(0, NUM_POSTS - recentes.length))]
     }
-    if (!ids.length) { console.log('  Nenhum post na janela de data.'); escreverStatus(true, null); await ctx.close(); process.exit(0) }
-    state = { contagem: {}, perfis: {}, porPost: {}, done: [], pending: ids, followers: null, following: null }; saveState(state)
-    console.log(`  ${ids.length} posts na fila.`)
+    if (!fila.length) { console.log('  Nada novo na janela (backfill concluído e sem recentes).'); escreverStatus(true, null); await ctx.close(); process.exit(0) }
+    state = { contagem: {}, perfis: {}, porPost: {}, postMeta: {}, storiesContagem: {}, storiesPorPost: {}, storiesPerfis: {}, done: [], pending: fila, recentesPk: [...recentesPk], followers: null, following: null }
+    saveState(state)
+    console.log(`  fila: ${fila.length} posts (${recentes.length} recentes${MODE === 'noite' ? ' ignorados (modo noite)' : ''} · janela total ${janela.length} · backfill restante ${backfill.length})`)
   }
   // saneia state retomado de versoes antigas
   state.perfis = state.perfis || {}; state.porPost = state.porPost || {}
+  state.postMeta = state.postMeta || {}; state.storiesContagem = state.storiesContagem || {}
+  state.storiesPorPost = state.storiesPorPost || {}; state.storiesPerfis = state.storiesPerfis || {}
 
   const reqCounter = { n: 0 }
   const FOLLOW_LIMIT = Math.max(0, parseInt(process.env.IG_FOLLOW_LIMIT || '0', 10)) // 0 = todos
@@ -506,7 +623,26 @@ async function main() {
       if (u && typeof u === 'object') state.perfis[un] = { ...(state.perfis[un] || {}), ...u }
     }
     state.porPost[post.code || post.pk] = nomes
-    state.done.push(post.pk); state.pending.shift(); saveState(state); gravarTudo(state)
+    state.postMeta[post.code || post.pk] = { url: post.url || (post.code ? `https://www.instagram.com/p/${post.code}/` : ''), legenda: post.legenda || '', taken_at: post.taken_at || 0 }
+    // STORIES (experimental): quem resharou o post no story. Best-effort; nunca derruba os likers.
+    if (COLETAR_STORIES) {
+      try {
+        const st = await getStoryResharers(page, post.code)
+        const sNomes = []
+        if (st.users) for (const u of st.users) {
+          const un = typeof u === 'string' ? u : u && u.username
+          if (!un) continue
+          sNomes.push(un)
+          state.storiesContagem[un] = (state.storiesContagem[un] || 0) + 1
+          if (u && typeof u === 'object') state.storiesPerfis[un] = { ...(state.storiesPerfis[un] || {}), ...u }
+        }
+        state.storiesPorPost[post.code || post.pk] = sNomes
+        if (process.env.IG_DEBUG === 'true') console.log(`    stories: ${sNomes.length} resharers (${st.error || 'ok'})`)
+      } catch { state.storiesPorPost[post.code || post.pk] = [] }
+    }
+    state.done.push(post.pk); state.pending.shift()
+    try { const lg = loadLedger(); lg.done[post.pk] = Math.floor(Date.now() / 1000); saveLedger(lg) } catch {}
+    saveState(state); gravarTudo(state)
     reqCounter.n++
     console.log(`  [${state.done.length}/${total}] ${post.code || post.pk} -> ${res.users ? nomes.length + ' curtidores' : 'erro ' + res.error} (${res.fonte})`)
     // pausa humana entre posts: aleatoria e com folga (varia muito)
