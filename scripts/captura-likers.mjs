@@ -11,16 +11,19 @@
 //   LIKERS_OUT_DIR=C:\jfn\likers-sync, IG_PROFILE_DIR=C:\jfn\ig-profile,
 //   IG_INTERACTIVE=true (quando rodado por voce, pra poder logar)
 //
-// AGREGA AS FUNCOES DO InstagramLikesLeaderboard:
-//   - curtidores por post (atribuicao: quem curtiu QUAL post) + perfis ricos
-//   - followers + following + insights de relacionamento
+// REPLICA O InstagramLikesLeaderboard (adaptado p/ desktop/Playwright):
+//   - leaderboard com % de engajamento (curtidas/total posts) + rank
+//   - abas: quem voce segue x quem nao segue (following / not_following)
+//   - atribuicao por post (quem curtiu QUAL post) + perfis ricos
+//   - followers + following + analise: dont_follow_back / not_following_back /
+//     mutual / ghost (seguidores que nunca curtiram)
 // Flags opcionais no .env:
 //   IG_COLLECT_FOLLOWERS=false  -> nao coleta seguidores (menos chamadas)
 //   IG_COLLECT_FOLLOWING=false  -> nao coleta quem voce segue
 //   IG_FOLLOW_LIMIT=2000        -> teto de seguidores/seguindo (0 = todos)
-// Saidas em LIKERS_OUT_DIR: likers.json (compat), likers.csv,
-//   likers-detalhado.json, posts-curtidores.json, followers.json,
-//   following.json, insights.json
+// Saidas em LIKERS_OUT_DIR: likers.json (compat), likers.csv, leaderboard.csv,
+//   likers-detalhado.json, posts-curtidores.json, followers.json, following.json,
+//   leaderboard-seguindo.json, leaderboard-nao-seguindo.json, follower-analysis.json
 import 'dotenv/config'
 import fs from 'fs'
 import path from 'path'
@@ -43,43 +46,82 @@ const saveState = (s) => fs.writeFileSync(STATE_FILE, JSON.stringify(s))
 function escreverStatus(ok, erro) {
   try { fs.mkdirSync(OUT, { recursive: true }); fs.writeFileSync(path.join(OUT, 'likers-status.json'), JSON.stringify({ ok, erro: erro || null, quando: new Date().toISOString() })) } catch {}
 }
-// Escreve TODAS as saidas a partir do state. likers.json/.csv mantem o formato
-// antigo [{username,curtidas}] (compat com o importador da VM). O resto e novo.
+// Escreve TODAS as saidas a partir do state, replicando o InstagramLikesLeaderboard:
+// leaderboard com % de engajamento + rank, abas following/nao-seguindo, e a
+// analise de seguidores (dont_follow_back / not_following_back / mutual / ghost).
+// likers.json/.csv mantem o formato antigo (compat com o importador da VM).
 function gravarTudo(state) {
   fs.mkdirSync(OUT, { recursive: true })
   const contagem = state.contagem || {}
+  const perfis = state.perfis || {}
+  const followers = state.followers || []
+  const following = state.following || []
+  const porPost = state.porPost || {}
+  const totalPosts = (state.done || []).length || Object.keys(porPost).length || 0
+
+  // mapa unificado de perfis (curtidores + followers + following)
+  const prof = {}
+  const merge = (u) => { if (u && u.username) prof[u.username] = { ...(prof[u.username] || {}), ...u } }
+  for (const un of Object.keys(perfis)) merge({ username: un, ...perfis[un] })
+  for (const u of followers) merge(u)
+  for (const u of following) merge(u)
+  const P = (un) => prof[un] || { username: un }
+
+  const followerSet = new Set(followers.map((u) => u.username))
+  const followingSet = new Set(following.map((u) => u.username))
+  const likerSet = new Set(Object.keys(contagem))
+
+  // 1) compat: ranking simples [{username,curtidas}] (importador da VM)
   const ranking = Object.entries(contagem).map(([username, curtidas]) => ({ username, curtidas })).sort((a, b) => b.curtidas - a.curtidas)
-  // 1) compat: ranking simples
   fs.writeFileSync(path.join(OUT, 'likers.json'), JSON.stringify(ranking, null, 2))
   fs.writeFileSync(path.join(OUT, 'likers.csv'), 'username,curtidas\n' + ranking.map((r) => `${r.username},${r.curtidas}`).join('\n'))
-  // 2) atribuicao por post (quem curtiu qual post) + inverso (cada user -> posts)
-  const porPost = state.porPost || {}
+
+  // 2) atribuicao por post + inverso (user -> posts)
   fs.writeFileSync(path.join(OUT, 'posts-curtidores.json'), JSON.stringify(porPost, null, 2))
   const userPosts = {}
   for (const [code, us] of Object.entries(porPost)) for (const u of us) (userPosts[u] = userPosts[u] || []).push(code)
-  // 3) detalhado: perfil rico + relacao + posts que curtiu
-  const followersSet = new Set((state.followers || []).map((u) => u.username))
-  const followingSet = new Set((state.following || []).map((u) => u.username))
-  const perfis = state.perfis || {}
-  const detalhado = ranking.map((r) => {
-    const p = perfis[r.username] || {}
-    return { username: r.username, curtidas: r.curtidas, full_name: p.full_name || '', is_verified: !!p.is_verified, is_private: !!p.is_private, pk: p.pk || '', te_segue: followersSet.has(r.username), voce_segue: followingSet.has(r.username), posts_curtidos: userPosts[r.username] || [] }
-  })
+
+  // 3) leaderboard detalhado (igual ao original: % engajamento + rank)
+  const pct = (c) => totalPosts ? Math.round((c / totalPosts) * 1000) / 10 : 0
+  const mkEntry = (username, likesCount) => {
+    const p = P(username)
+    return { rank: 0, username, full_name: p.full_name || '', is_verified: !!p.is_verified, is_private: !!p.is_private, pk: p.pk || '', likesCount, totalPosts, percentage: pct(likesCount), te_segue: followerSet.has(username), voce_segue: followingSet.has(username), posts_curtidos: userPosts[username] || [] }
+  }
+  const detalhado = ranking.map((r) => mkEntry(r.username, r.curtidas))
+  detalhado.forEach((e, i) => { e.rank = i + 1 })
   fs.writeFileSync(path.join(OUT, 'likers-detalhado.json'), JSON.stringify(detalhado, null, 2))
+
   // 4) listas brutas
-  if (state.followers) fs.writeFileSync(path.join(OUT, 'followers.json'), JSON.stringify(state.followers, null, 2))
-  if (state.following) fs.writeFileSync(path.join(OUT, 'following.json'), JSON.stringify(state.following, null, 2))
-  // 5) insights de relacionamento (so quando temos as listas)
+  if (state.followers) fs.writeFileSync(path.join(OUT, 'followers.json'), JSON.stringify(followers, null, 2))
+  if (state.following) fs.writeFileSync(path.join(OUT, 'following.json'), JSON.stringify(following, null, 2))
+
+  // 5) abas do leaderboard + analise de seguidores (so com as listas)
   if (state.followers || state.following) {
-    const likers = Object.keys(contagem)
-    const insights = {
+    // aba "following": quem voce segue (inclui os que NUNCA curtiram = 0 likes)
+    const seguindoTab = following.map((u) => mkEntry(u.username, contagem[u.username] || 0)).sort((a, b) => b.likesCount - a.likesCount)
+    seguindoTab.forEach((e, i) => { e.rank = i + 1 })
+    // aba "nao seguindo": curtidores que voce NAO segue
+    const naoSeguindoTab = detalhado.filter((e) => !followingSet.has(e.username))
+    naoSeguindoTab.forEach((e, i) => { e.rank = i + 1 })
+    fs.writeFileSync(path.join(OUT, 'leaderboard-seguindo.json'), JSON.stringify(seguindoTab, null, 2))
+    fs.writeFileSync(path.join(OUT, 'leaderboard-nao-seguindo.json'), JSON.stringify(naoSeguindoTab, null, 2))
+
+    // analise de seguidores — 4 categorias EXATAS do original
+    const lst = (uns) => uns.map((un) => P(un))
+    const analise = {
       gerado_em: new Date().toISOString(),
-      fas_que_te_seguem: likers.filter((u) => followersSet.has(u)),                 // curtem E te seguem
-      curtem_mas_nao_te_seguem: likers.filter((u) => !followersSet.has(u)),         // curtem sem te seguir (fas externos)
-      te_segue_voce_nao_segue: (state.followers || []).map((u) => u.username).filter((u) => !followingSet.has(u)),
-      voce_segue_nao_te_segue: (state.following || []).map((u) => u.username).filter((u) => !followersSet.has(u)),
+      dont_follow_back: lst(following.map((u) => u.username).filter((un) => !followerSet.has(un))),   // vc segue, nao te seguem
+      not_following_back: lst(followers.map((u) => u.username).filter((un) => !followingSet.has(un))), // te seguem, vc nao segue
+      mutual: lst(following.map((u) => u.username).filter((un) => followerSet.has(un))),               // mutuo
+      ghost: lst(followers.map((u) => u.username).filter((un) => !likerSet.has(un))),                  // te seguem, nunca curtiram
     }
-    fs.writeFileSync(path.join(OUT, 'insights.json'), JSON.stringify(insights, null, 2))
+    fs.writeFileSync(path.join(OUT, 'follower-analysis.json'), JSON.stringify(analise, null, 2))
+
+    // CSV rico (colunas do original + relacao)
+    const esc = (s) => `"${String(s || '').replace(/"/g, '""')}"`
+    const csv = 'Rank,Username,Full Name,Likes,Total Posts,Percentage,Voce_segue,Te_segue\n' +
+      detalhado.map((e) => `${e.rank},${esc(e.username)},${esc(e.full_name)},${e.likesCount},${e.totalPosts},${e.percentage}%,${e.voce_segue},${e.te_segue}`).join('\n')
+    fs.writeFileSync(path.join(OUT, 'leaderboard.csv'), csv)
   }
   return ranking
 }
@@ -407,8 +449,8 @@ async function main() {
   const ranking = gravarTudo(state)
   escreverStatus(true, null)
   try { fs.unlinkSync(STATE_FILE) } catch {}
-  console.log(`✅ Completo. ${ranking.length} curtidores | ${state.followers ? state.followers.length : '-'} followers | ${state.following ? state.following.length : '-'} following`)
-  console.log(`   Saidas em ${OUT}: likers.json, likers-detalhado.json, posts-curtidores.json, followers.json, following.json, insights.json`)
+  console.log(`✅ Completo. ${ranking.length} curtidores | ${state.followers ? state.followers.length : '-'} followers | ${state.following ? state.following.length : '-'} following | ${totalPosts} posts`)
+  console.log(`   Saidas em ${OUT}: likers.json, leaderboard.csv, likers-detalhado.json, posts-curtidores.json, leaderboard-seguindo.json, leaderboard-nao-seguindo.json, follower-analysis.json, followers.json, following.json`)
   console.log('Top 10:', ranking.slice(0, 10).map((r) => `${r.username}(${r.curtidas})`).join(', '))
 }
 main().catch((e) => { console.error(e); escreverStatus(false, 'erro: ' + (e.message || e)); process.exit(1) })
