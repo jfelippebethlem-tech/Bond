@@ -21,13 +21,13 @@ export default function PontuacaoPage() {
       <Card>
         <h2 className="font-semibold text-gray-900 mb-3">1. Pontuação (Score)</h2>
         <div className="rounded-lg bg-gray-900 text-white px-4 py-3 font-mono text-sm">
-          score = curtidas × 1 &nbsp;+&nbsp; comentários × 2 &nbsp;+&nbsp; compartilhamentos × 3 &nbsp;+&nbsp; stories × 3
+          score = curtidas × 1 &nbsp;+&nbsp; comentários × 2 &nbsp;+&nbsp; compartilhamentos × 3
         </div>
         <ul className="text-sm text-gray-600 mt-3 space-y-1.5">
           <li>❤️ <b>Curtida = 1 ponto</b> — o engajamento mais leve.</li>
           <li>💬 <b>Comentário = 2 pontos</b> — exige mais esforço e gera conversa.</li>
           <li>🔁 <b>Compartilhamento = 3 pontos</b> — expõe o post à rede do apoiador (maior alcance).</li>
-          <li>📲 <b>Reshare em Story = 3 pontos</b> — também amplifica para os seguidores do apoiador.</li>
+          <li className="text-gray-400">📲 <b>Reshare em Story = 3 pontos</b> — <b>experimental / ainda não coletado</b>: hoje não há captura de stories, então <b>não entra</b> no score (indisponível ≠ zero).</li>
         </ul>
         <p className="text-xs text-gray-400 mt-3">
           A soma é por pessoa, juntando todas as contas vinculadas (Instagram, Facebook, Twitter/X).
@@ -69,7 +69,7 @@ export default function PontuacaoPage() {
             <span className="font-mono text-xs text-gray-500">(compart.×seguidores + coment.×seguidores×0,2 + curtidas×seguidores×0,05) ÷ 100</span>
           </li>
           <li><b>Consistência</b> — % dos posts (últimos 30 dias) em que a pessoa engajou.</li>
-          <li><b>Velocidade</b> — tempo médio (minutos) entre o post sair e a pessoa engajar.</li>
+          <li className="text-gray-400"><b>Velocidade</b> — tempo médio (minutos) entre o post sair e a pessoa engajar. <b>Experimental / indisponível para curtidas</b>: a API não retorna o horário de cada curtida (timestamp nulo), então só é calculável para comentários. Indisponível ≠ zero.</li>
           <li><b>Streak</b> — quantos posts mais recentes seguidos a pessoa engajou (sequência).</li>
         </ul>
       </Card>
