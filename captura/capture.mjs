@@ -1,6 +1,7 @@
-// ENTRYPOINT da captura HUMANA (motores Node: playwright | cdp).
-// O motor A (nodriver) é Python: capture_nodriver.py. Os 3 escrevem a MESMA saída
-// (screenshots + manifest), pra você comparar qual passa mais limpo pela Meta.
+// ENTRYPOINT da captura HUMANA (motor Node: cdp).
+// O motor nodriver é Python: capture_nodriver.py. Ambos escrevem a MESMA saída
+// (screenshots + manifest). O motor Playwright foi REMOVIDO: deixava rastro de
+// fingerprint que a Meta pode sondar e não dá pra eliminar — não vale o risco.
 //
 // Uso (desktop, dirigido pelo Hermes):
 //   IG_ENGINE=cdp IG_TARGET_USER=<perfil_publico> node capture/capture.mjs
@@ -16,7 +17,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 carregarEnv(path.join(__dirname, '.env'))
 carregarEnv(path.join(__dirname, '..', '.env'))
 
-const ENGINE = (process.env.IG_ENGINE || 'cdp').toLowerCase()        // 'cdp' | 'playwright'
+const ENGINE = (process.env.IG_ENGINE || 'cdp').toLowerCase()        // 'cdp' (nodriver = script python à parte)
 const TARGET = (process.env.IG_TARGET_USER || process.env.IG_PERFIL || '').replace(/^@/, '').trim()
 const SHOTS = process.env.LIKERS_SHOTS_DIR || path.join(__dirname, 'shots')
 const OUT = process.env.LIKERS_OUT_DIR || path.join(__dirname, '..', 'likers-sync')
@@ -56,14 +57,11 @@ async function main() {
 
   let driver
   try {
-    if (ENGINE === 'playwright') {
-      const { criarDriverPlaywright } = await import('./lib/driver-playwright.mjs')
-      driver = await criarDriverPlaywright(cfg)
-    } else if (ENGINE === 'cdp') {
+    if (ENGINE === 'cdp') {
       const { criarDriverCDP } = await import('./lib/driver-cdp.mjs')
       driver = await criarDriverCDP(cfg)
       if (driver._refreshVp) await driver._refreshVp()
-    } else { throw new Error(`motor desconhecido: ${ENGINE} (use cdp|playwright; nodriver=python)`) }
+    } else { throw new Error(`motor desconhecido: ${ENGINE} (use cdp; ou nodriver = python capture_nodriver.py)`) }
   } catch (e) {
     console.error('⛔ Falha ao iniciar o motor:', e.message)
     escreverStatus(OUT, false, 'motor_falhou: ' + e.message); process.exit(2)
