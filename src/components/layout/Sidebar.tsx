@@ -24,6 +24,9 @@ import {
   Sparkles,
   Heart,
   Trophy,
+  ThumbsUp,
+  Calculator,
+  Cpu,
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import clsx from 'clsx'
@@ -39,15 +42,15 @@ const nav = [
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
   { href: '/interacoes', icon: Heart, label: 'Interações' },
   { href: '/posts', icon: Trophy, label: 'Posts' },
-  { href: '/curtidores', icon: Heart, label: 'Quem curtiu' },
-  { href: '/pontuacao', icon: Trophy, label: 'Como pontua' },
+  { href: '/curtidores', icon: ThumbsUp, label: 'Quem curtiu' },
+  { href: '/pontuacao', icon: Calculator, label: 'Como pontua' },
   { href: '/analise', icon: Brain, label: 'Análise de Conteúdo' },
   { href: '/monitoramento', icon: Radio, label: 'Monitoramento' },
   { href: '/demandas', icon: FileText, label: 'Demandas' },
   { href: '/produtividade', icon: BarChart3, label: 'Produtividade' },
   { href: '/telegram', icon: Send, label: 'Telegram' },
   { href: '/ia', icon: Bot, label: 'Assistente IA' },
-  { href: '/hermes', icon: Brain, label: 'Hermes Agent' },
+  { href: '/hermes', icon: Cpu, label: 'Hermes Agent' },
   { href: '/configuracoes', icon: Settings, label: 'Configurações' },
 ]
 

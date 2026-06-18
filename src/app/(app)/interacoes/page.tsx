@@ -157,7 +157,7 @@ export default function InteracoesPage() {
       {(stats.like === 0 && stats.share === 0 && stats.comment > 0) && (
         <div className="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 mb-5">
           <Activity size={14} className="text-gray-400 mt-0.5 shrink-0" />
-          <span>No <b>Instagram</b>, a Graph API só identifica <b>quem comentou</b>. <b>Quem curtiu</b> é capturado à parte pelo coletor do desktop (IP residencial, conta principal) e aparece na aba <b>Curtidores</b> (ranking de quem mais curte). Já <b>quem compartilhou</b> a Meta <b>não revela em lugar nenhum</b> — só o número total (aba Posts). Reshares em <b>Stories</b> (quem colocou seu post no story) só são visíveis ao dono — em avaliação. No <b>Facebook</b> e <b>Twitter/X</b>, curtidas/compartilhamentos por pessoa aparecem aqui quando conectados.</span>
+          <span>No <b>Instagram</b>, a Graph API só identifica <b>quem comentou</b>. <b>Quem curtiu</b> é capturado à parte pelo coletor do desktop (IP residencial, conta principal) e aparece na aba <b>Curtidores</b> (ranking de quem mais curte). Já <b>quem compartilhou</b> a Meta <b>não revela em lugar nenhum</b> — só o número total (aba Posts). Reshares em <b>Stories</b> só são visíveis ao dono — em avaliação. No <b>Facebook</b>, os posts e os números (curtidas/comentários/compart.) já sincronizam, mas <b>QUEM</b> comentou/curtiu exige a permissão <b>pages_read_user_content</b> no token da Meta (a API omite o autor sem ela); peça ao admin para liberá-la no app e regerar o token. <b>Twitter/X</b>: por pessoa quando o token for configurado.</span>
         </div>
       )}
 
@@ -183,7 +183,7 @@ export default function InteracoesPage() {
           <button onClick={() => setModo('lista')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${modo === 'lista' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}><List size={15} /> Lista</button>
         </div>
         <select value={tipoInteracao} onChange={(e) => setTipo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-          <option value="">Todos os tipos</option><option value="like">❤️ Curtidas</option><option value="comment">💬 Comentários</option><option value="share">🔁 Compartilhamentos</option>
+          <option value="">Todos os tipos</option><option value="like">Curtidas</option><option value="comment">Comentários</option><option value="share">Compartilhamentos</option>
         </select>
         <select value={plataforma} onChange={(e) => setPlat(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="">Todas as redes</option><option value="instagram">Instagram</option><option value="facebook">Facebook</option><option value="twitter">Twitter/X</option>
@@ -206,7 +206,7 @@ export default function InteracoesPage() {
         <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide">
-              <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center">❤️</th><th className="px-3 py-3 text-center">💬</th><th className="px-3 py-3 text-center">🔁</th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
+              <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center"><Heart size={14} className="text-rose-500 inline" /></th><th className="px-3 py-3 text-center"><MessageCircle size={14} className="text-blue-500 inline" /></th><th className="px-3 py-3 text-center"><Share2 size={14} className="text-green-600 inline" /></th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pessoas.map((p, i) => (

@@ -147,9 +147,11 @@ const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'
 
 export async function calcularHeatMap(dias = 30): Promise<HeatMap> {
   const desde = new Date(Date.now() - dias * 24 * 60 * 60 * 1000)
+  // Hora REAL da interação (publicadoEm) quando há; só cai no criadoEm (hora do SYNC) no legado.
+  // Antes media a hora do sync → "melhor horário/dia" enganoso (não era quando o público interagiu).
   const interacoes = await prisma.bondInteracao.findMany({
-    where: { criadoEm: { gte: desde } },
-    select: { criadoEm: true },
+    where: { OR: [{ publicadoEm: { gte: desde } }, { publicadoEm: null, criadoEm: { gte: desde } }] },
+    select: { criadoEm: true, publicadoEm: true },
   })
 
   const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, total: 0 }))
@@ -157,7 +159,7 @@ export async function calcularHeatMap(dias = 30): Promise<HeatMap> {
   const matriz: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
 
   for (const i of interacoes) {
-    const d = new Date(i.criadoEm)
+    const d = new Date(i.publicadoEm ?? i.criadoEm)
     const h = d.getHours()
     const dia = d.getDay()
     porHora[h].total++

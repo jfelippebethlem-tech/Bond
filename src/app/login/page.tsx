@@ -83,7 +83,7 @@ export default function LoginPage() {
         </form>
 
         <p className="text-center text-xs text-gray-400 mt-6">
-          Senha padrão: admin123 (altere no .env)
+          Acesso restrito ao gabinete.
         </p>
       </div>
     </div>

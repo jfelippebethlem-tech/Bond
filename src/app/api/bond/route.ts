@@ -187,6 +187,26 @@ export async function GET(req: NextRequest) {
         if (it.data > e.ultima) e.ultima = it.data
         byP.set(it.pessoa, e)
       }
+      // MERGE "quem curtiu" do IG (coletor do desktop -> BondFa.totalLikes). Sem isto a coluna ❤️
+      // fica ZERADA, pois o BondInteracao não tem likes do IG (a Graph API não revela quem curtiu).
+      // Likes do IG são AGREGADOS (sem data por-evento) -> só entram na visão "tudo" (sem filtro de
+      // data); com filtro de data mantém-se honesto (não inventa quando a curtida aconteceu).
+      if (!hasDate && (!plataforma || plataforma === 'instagram')) {
+        const curtidores = await prisma.bondFa.findMany({
+          where: { plataforma: 'instagram', totalLikes: { gt: 0 } },
+          select: { username: true, nome: true, totalLikes: true },
+        })
+        for (const f of curtidores) {
+          const nome = String(f.nome || f.username || '').trim()
+          if (!nome || donoHandles.has(nome.toLowerCase())) continue
+          if (pessoa && !nome.toLowerCase().includes(pessoa)) continue
+          const e = byP.get(nome) || { pessoa: nome, total: 0, like: 0, comment: 0, share: 0, plataformas: new Set<string>(['instagram']), posts: new Set<string>(), ultima: new Date(0) }
+          e.like += f.totalLikes
+          e.total += f.totalLikes
+          e.plataformas.add('instagram')
+          byP.set(nome, e)
+        }
+      }
       const pessoas = Array.from(byP.values())
         .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
         .sort((a, b) => b.total - a.total)
