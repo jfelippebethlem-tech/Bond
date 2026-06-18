@@ -43,14 +43,27 @@ PROMPT_LIKERS = (
  "('Curtidas'/'Likes'), e os botões 'Seguir'/'Seguindo'/'Following'. "
  'Responda SÓ JSON: {"usernames": ["user_um","user_dois"]}'
 )
+_HOJE = time.strftime("%Y-%m-%d")
 PROMPT_META = (
  "Captura de tela de um post do Instagram. Extraia os metadados do post. "
  'Responda SÓ JSON: {"author":"@perfil","date_iso":"YYYY-MM-DD","caption":"texto","like_count_text":"123 curtidas"}. '
- "A data vem do timestamp mostrado no post (se for relativo tipo 'há 2 dias', estime a data absoluta a partir de hoje)."
+ f"HOJE é {_HOJE}. O Instagram mostra a data de forma RELATIVA ('há 2 dias', '3 sem', 'ontem', '5 d'); "
+ f"CALCULE a data absoluta a partir de HOJE ({_HOJE}) e devolva em date_iso (YYYY-MM-DD). Se nao houver data visivel, date_iso vazio."
 )
 
 def b64(path):
     with open(path, "rb") as f: return base64.b64encode(f.read()).decode()
+
+def _json_do_texto(txt):
+    # Extracao ROBUSTA: tira cerca ```json, tenta json.loads; se falhar (o fallback
+    # OpenRouter costuma vir com prosa antes/depois), pega o primeiro bloco {...}.
+    s = re.sub(r'^```(?:json)?|```$', '', (txt or "").strip(), flags=re.M).strip()
+    try:
+        return json.loads(s)
+    except Exception:
+        m = re.search(r'\{.*\}', s, re.S)
+        if not m: raise
+        return json.loads(m.group(0))
 
 def http_json(url, body, headers, tries=3):
     data = json.dumps(body).encode()
@@ -79,7 +92,7 @@ def gemini_vision(prompt, image_paths):
         headers = {}
     resp = http_json(url, body, headers)
     txt = resp["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(re.sub(r'^```json|```$', '', txt.strip(), flags=re.M).strip())
+    return _json_do_texto(txt)
 
 def openrouter_vision(prompt, image_paths):
     content = [{"type": "text", "text": prompt}]
@@ -90,7 +103,7 @@ def openrouter_vision(prompt, image_paths):
     resp = http_json("https://openrouter.ai/api/v1/chat/completions", body,
                      {"Authorization": f"Bearer {OPENROUTER_KEY}"})
     txt = resp["choices"][0]["message"]["content"]
-    return json.loads(re.sub(r'^```json|```$', '', txt.strip(), flags=re.M).strip())
+    return _json_do_texto(txt)
 
 def visao(prompt, image_paths):
     try:
@@ -164,7 +177,8 @@ def main():
     ranking = sorted([{"username": u, "curtidas": c} for u, c in contagem.items()], key=lambda x: -x["curtidas"])
     os.makedirs(OUT, exist_ok=True)
     json.dump(ranking, open(os.path.join(OUT, "likers.json"), "w"), indent=2, ensure_ascii=False)
-    open(os.path.join(OUT, "likers.csv"), "w").write("username,curtidas\n" + "\n".join(f"{r['username']},{r['curtidas']}" for r in ranking))
+    _cell = lambda s: '"' + str(s).replace('"', '""') + '"'
+    open(os.path.join(OUT, "likers.csv"), "w").write("username,curtidas\n" + "\n".join(f"{_cell(r['username'])},{r['curtidas']}" for r in ranking))
     json.dump(sorted(post_meta.values(), key=lambda m: -(m["taken_at"] or 0)), open(os.path.join(OUT, "posts-meta.json"), "w"), indent=2, ensure_ascii=False)
     json.dump(por_post, open(os.path.join(OUT, "posts-curtidores.json"), "w"), indent=2, ensure_ascii=False)
     print(f"\n✅ {len(ranking)} curtidores distintos · {len(post_meta)} posts · provider={PROVIDER}/{MODEL}")

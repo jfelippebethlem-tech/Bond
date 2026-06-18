@@ -82,10 +82,14 @@ async def centro_do(tab, selector):
         if not el: return None
         p = await el.get_position()
         if not p: return None
-        # nodriver Position: tem .abs_x/.abs_y/.width/.height (ou .left/.top)
-        x = getattr(p, "abs_x", None) or getattr(p, "left", 0)
-        y = getattr(p, "abs_y", None) or getattr(p, "top", 0)
-        w = getattr(p, "width", 100); h = getattr(p, "height", 100)
+        # nodriver Position expoe .abs_x/.abs_y (viewport absoluto = o que o CDP Input
+        # quer). Checar is-not-None (nao truthiness): abs_x==0 e coordenada legitima.
+        # .left/.top sao relativos ao box e NAO servem de coordenada de clique.
+        ax = getattr(p, "abs_x", None); ay = getattr(p, "abs_y", None)
+        x = ax if ax is not None else getattr(p, "x", None)
+        y = ay if ay is not None else getattr(p, "y", None)
+        if x is None or y is None: return None
+        w = getattr(p, "width", None) or 120; h = getattr(p, "height", None) or 80
         return (x + w * rand(0.4, 0.6), y + h * rand(0.3, 0.7), w, h, el)
     except Exception:
         return None
@@ -125,7 +129,9 @@ async def capturar_post(tab, code):
 
     async def esperar_dialog():
         for _ in range(14):
-            dc = await centro_do(tab, 'div[role="dialog"]')
+            # exige dialog COM links de perfil (curtidores) — evita falso-positivo
+            # de banner cookie/notificacao e distingue de pagina/bloqueio.
+            dc = await centro_do(tab, 'div[role="dialog"]:has(a[href^="/"])')
             if dc and dc[2] > 100 and dc[3] > 100: return dc
             await sleep(rand(0.25, 0.6))
         return None

@@ -58,7 +58,11 @@ async function microPausa(min = 350, max = 1600) { await sleep(rand(min, max)) }
 async function esperarDialog(driver, timeoutMs = 7000) {
   const fim = Date.now() + timeoutMs
   while (Date.now() < fim) {
-    const b = await driver.boxOf(['div[role="dialog"]'])
+    // EXIGE um dialog COM links de perfil (curtidores). Distingue o modal de
+    // curtidas de um banner de cookie/notificacao (falso modalAbriu que mascara
+    // bloqueio) e de uma pagina liked_by sem modal. Se 0 nomes (bloqueio/0-like),
+    // nao acha -> modalAbriu=false honesto.
+    const b = await driver.boxOf(['div[role="dialog"]:has(a[href^="/"])'])
     if (b && b.width > 100 && b.height > 100) return b
     await sleep(rand(250, 600))
   }
