@@ -33,14 +33,25 @@ export async function getFacebookPosts(limit = 20) {
   const base = 'id,message,story,created_time,full_picture,permalink_url,likes.summary(true),shares'
   // comments.summary(true) exige pages_read_user_content; se o token nao tiver, a request inteira falha (#200).
   // Tenta COM comentarios; se falhar, cai p/ SEM (posts ainda sincronizam, so o nº de comentarios fica 0).
+  let ultimoErro: { code?: number; message?: string } | null = null
   for (const fields of [`${base},comments.summary(true)`, base]) {
     const res = await fetch(fbUrl('/me/posts', `fields=${fields}&limit=${limit}`))
     if (res.ok) {
       const data = await res.json()
       return data.data ?? []
     }
+    const data = await res.json().catch(() => ({}))
+    ultimoErro = data?.error ?? { message: `HTTP ${res.status}` }
+    // Erro de token (190 = expirado/invalido) NUNCA é "sem posts": propaga em vez
+    // de mascarar com [] — senão syncFacebook devolve synced:0 parecendo "tudo certo".
+    // (#200 é permissão de comentários — esse SIM cai para a tentativa SEM comentários.)
+    if (ultimoErro?.code === 190) {
+      throw new Error(`Facebook token expirado/invalido (#190): ${ultimoErro.message ?? ''}`)
+    }
   }
-  return []
+  // Esgotou as tentativas sem sucesso: propaga o motivo real em vez de [] mudo,
+  // para o worker logar e não confundir "erro de API" com "página sem posts".
+  throw new Error(`Falha ao buscar posts do Facebook (#${ultimoErro?.code ?? '?'}): ${ultimoErro?.message ?? 'erro desconhecido'}`)
 }
 
 export async function getFacebookPostInsights(postId: string) {

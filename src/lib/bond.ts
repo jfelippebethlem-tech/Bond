@@ -46,13 +46,44 @@ function calcEngagement(likes = 0, comments = 0, shares = 0, impressions = 0): n
   return parseFloat((((likes + comments + shares) / impressions) * 100).toFixed(2))
 }
 
-async function upsertFa(plataforma: string, externalId: string, nome: string | null, username: string | null, liked = true) {
+// Interações brutas ponderadas (mesma fórmula do score de fã). Usado como
+// critério de ordenação quando NÃO há read_insights → engajamento global = 0
+// (sem isto, orderBy engajamento desc devolve ordem arbitrária e o filtro
+// engajamento>0 do "bottom" volta VAZIO).
+function interacoesBrutas(p: { likes?: number | null; comentarios?: number | null; compartilhos?: number | null }): number {
+  return (p.likes ?? 0) + (p.comentarios ?? 0) * 2 + (p.compartilhos ?? 0) * 3
+}
+
+// Ordena por engajamento desc com interações brutas como desempate (e como
+// critério principal quando todos os engajamentos são 0).
+function ordenarPorRelevancia<T extends { engajamento?: number | null; likes?: number | null; comentarios?: number | null; compartilhos?: number | null }>(posts: T[], dir: 'desc' | 'asc' = 'desc'): T[] {
+  const sinal = dir === 'desc' ? -1 : 1
+  return [...posts].sort((a, b) => {
+    const eng = (a.engajamento ?? 0) - (b.engajamento ?? 0)
+    if (eng !== 0) return sinal * eng
+    return sinal * (interacoesBrutas(a) - interacoesBrutas(b))
+  })
+}
+
+async function upsertFa(
+  plataforma: string,
+  externalId: string,
+  nome: string | null,
+  username: string | null,
+  tipo: 'like' | 'comment' | 'share' = 'like',
+) {
+  // Incrementa SOMENTE o contador correspondente ao tipo de interação.
+  // Antes só totalLikes era gravado — totalComents/totalShares ficavam sempre 0,
+  // zerando os termos *2 e *3 da fórmula de score.
+  const inc = { increment: 1 } as const
   await prisma.bondFa.upsert({
     where: { plataforma_externalId: { plataforma, externalId } },
     update: {
       nome: nome ?? undefined,
       username: username ?? undefined,
-      totalLikes: liked ? { increment: 1 } : undefined,
+      totalLikes: tipo === 'like' ? inc : undefined,
+      totalComents: tipo === 'comment' ? inc : undefined,
+      totalShares: tipo === 'share' ? inc : undefined,
       ultimaInter: new Date(),
     },
     create: {
@@ -60,7 +91,9 @@ async function upsertFa(plataforma: string, externalId: string, nome: string | n
       externalId,
       nome,
       username,
-      totalLikes: liked ? 1 : 0,
+      totalLikes: tipo === 'like' ? 1 : 0,
+      totalComents: tipo === 'comment' ? 1 : 0,
+      totalShares: tipo === 'share' ? 1 : 0,
       ultimaInter: new Date(),
     },
   })
@@ -178,11 +211,11 @@ export async function syncTwitter() {
     })
 
     for (const liker of likers) {
-      await upsertFa('twitter', liker.id, liker.name, liker.username, true)
+      await upsertFa('twitter', liker.id, liker.name, liker.username, 'like')
       await registrarInteracao('twitter', liker.id, 'like', tweet.id)
     }
     for (const rt of retweeters) {
-      await upsertFa('twitter', rt.id, rt.name, rt.username, false)
+      await upsertFa('twitter', rt.id, rt.name, rt.username, 'share')
       await registrarInteracao('twitter', rt.id, 'share', tweet.id)
     }
     synced++
@@ -268,12 +301,12 @@ export async function syncFacebook() {
     })
 
     for (const liker of likers) {
-      await upsertFa('facebook', liker.id, liker.name, null, true)
+      await upsertFa('facebook', liker.id, liker.name, null, 'like')
       await registrarInteracao('facebook', liker.id, 'like', post.id)
     }
     for (const comment of comments) {
       if (!comment.from?.id) continue
-      await upsertFa('facebook', comment.from.id, comment.from.name, null, false)
+      await upsertFa('facebook', comment.from.id, comment.from.name, null, 'comment')
       const cdt = comment.created_time ? new Date(comment.created_time) : undefined
       await registrarInteracao('facebook', comment.from.id, 'comment', post.id, cdt)
       if (comment.id && comment.message) {
@@ -360,7 +393,7 @@ export async function syncInstagram(limitPosts = 20) {
     })
 
     for (const c of comments) {
-      await upsertFa('instagram', c.id, c.username, c.username, false)
+      await upsertFa('instagram', c.id, c.username, c.username, 'comment')
       const cdt = c.timestamp ? new Date(c.timestamp) : undefined
       await registrarInteracao('instagram', c.id, 'comment', post.id, cdt)
       if (c.text) {
@@ -370,7 +403,7 @@ export async function syncInstagram(limitPosts = 20) {
       const replies = (c.replies?.data ?? []) as { id: string; username?: string; text?: string; timestamp?: string }[]
       for (const r of replies) {
         if (!r.username) continue
-        await upsertFa('instagram', r.id, r.username, r.username, false)
+        await upsertFa('instagram', r.id, r.username, r.username, 'comment')
         const rdt = r.timestamp ? new Date(r.timestamp) : undefined
         await registrarInteracao('instagram', r.id, 'comment', post.id, rdt)
         if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text, rdt)
@@ -631,11 +664,11 @@ export async function rejeitarComentario(comentarioId: string, plataforma: strin
 // ── Análises AI ───────────────────────────────────────────────────────────────
 
 export async function analisarTopPosts() {
-  const posts = await prisma.bondPost.findMany({
-    orderBy: { engajamento: 'desc' },
-    take: 10,
-    include: { perfil: true },
-  })
+  // Ordena por relevância (engajamento, com interações brutas como desempate)
+  // em memória: como não há read_insights, engajamento=0 em todos os posts e o
+  // orderBy do banco devolveria ordem arbitrária.
+  const todos = await prisma.bondPost.findMany({ include: { perfil: true } })
+  const posts = ordenarPorRelevancia(todos, 'desc').slice(0, 10)
   if (!posts.length) return null
 
   const resumo = posts.map(p =>
@@ -675,12 +708,19 @@ RECOMENDAÇÕES PRÁTICAS:
 
 // Inteligência total: análise profunda de viralização + benchmark (direita) + algoritmo
 export async function analiseProfunda() {
-  const [top, bottom, porTipo] = await Promise.all([
-    prisma.bondPost.findMany({ orderBy: { engajamento: 'desc' }, take: 12 }),
-    prisma.bondPost.findMany({ where: { engajamento: { gt: 0 } }, orderBy: { engajamento: 'asc' }, take: 6 }),
+  // Ordena por relevância em memória (engajamento com interações brutas como
+  // desempate). Como não há read_insights, engajamento=0 em todos os posts:
+  // o orderBy do banco devolveria ordem arbitrária e o antigo filtro
+  // engajamento>0 do "bottom" retornava VAZIO.
+  const [todos, porTipo] = await Promise.all([
+    prisma.bondPost.findMany(),
     prisma.bondPost.groupBy({ by: ['tipo'], _avg: { engajamento: true, alcance: true }, _count: true }),
   ])
-  if (!top.length) return null
+  if (!todos.length) return null
+  const ranked = ordenarPorRelevancia(todos, 'desc')
+  const top = ranked.slice(0, 12)
+  // "bottom" = os de MENOR interação bruta (sem filtrar por engajamento>0)
+  const bottom = ranked.slice(-6).reverse()
 
   const fmt = (p: typeof top[number]) => `[${p.plataforma}/${p.tipo}] "${p.conteudo.slice(0, 120)}" — ${p.likes} likes ${p.comentarios} coment ${p.compartilhos} compart alcance:${p.alcance} eng:${p.engajamento.toFixed(1)}%`
   const fmtTipo = porTipo.map((t) => `${t.tipo}: eng medio ${(t._avg.engajamento ?? 0).toFixed(1)}%, alcance medio ${Math.round(t._avg.alcance ?? 0)} (${t._count} posts)`).join(' | ')

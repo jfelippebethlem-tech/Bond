@@ -229,7 +229,9 @@ export async function POST(req: NextRequest) {
     const plat = body.plataforma
     let result
     if (plat === 'twitter') result = await syncTwitter()
-    else if (plat === 'facebook') result = await syncFacebook()
+    // getFacebookPosts agora lança em token expirado (#190) em vez de devolver [] mudo;
+    // captura aqui p/ devolver o motivo no body (em vez de 500) — honestidade sem mascarar.
+    else if (plat === 'facebook') result = await syncFacebook().catch((e) => ({ synced: 0, error: String(e instanceof Error ? e.message : e) }))
     else if (plat === 'instagram') result = await syncInstagram()
     else result = await syncAll()
     return NextResponse.json(result)
