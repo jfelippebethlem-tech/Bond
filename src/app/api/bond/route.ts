@@ -121,7 +121,7 @@ export async function GET(req: NextRequest) {
     // caem de volta no criadoEm (ingest). Antes filtrava só por criadoEm → a data era ignorada (bug 06-16).
     const dataFiltro = hasDate ? { OR: [{ publicadoEm: dateW }, { publicadoEm: null, criadoEm: dateW }] } : null
 
-    type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date }
+    type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date; postUrl?: string | null; postLegenda?: string | null }
     const items: Item[] = []
 
     // Comentários (têm autor + texto + post)
@@ -155,6 +155,18 @@ export async function GET(req: NextRequest) {
         items.push({ id: i.id, tipo: i.tipo, plataforma: i.plataforma, pessoa: nome, texto: null, postId: i.postId, data: i.criadoEm })
       }
     }
+    // Liga cada comentário ao POST em que foi feito (em qual post a pessoa comentou) — join por postId
+    // (= BondPost.postId, o id da plataforma; NÃO o cuid). Anexa legenda curta + link clicável.
+    const comPostIds = Array.from(new Set(items.filter((i) => i.tipo === 'comment' && i.postId).map((i) => i.postId)))
+    if (comPostIds.length) {
+      const ps = await prisma.bondPost.findMany({ where: { postId: { in: comPostIds } }, select: { postId: true, url: true, conteudo: true } })
+      const pmap = new Map(ps.map((p) => [p.postId, p]))
+      for (const it of items) {
+        if (it.tipo !== 'comment') continue
+        const p = pmap.get(it.postId)
+        if (p) { it.postUrl = p.url; it.postLegenda = (p.conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 80) }
+      }
+    }
     items.sort((a, b) => +new Date(b.data) - +new Date(a.data))
 
     // Stats PRECISOS (contagem real, não limitada pelo take das listas acima)
@@ -177,12 +189,13 @@ export async function GET(req: NextRequest) {
       // Exclui as contas do PRÓPRIO mandato (respostas do dono não são "interação de apoiador").
       const perfisDono = await prisma.bondPerfil.findMany({ select: { handle: true } })
       const donoHandles = new Set(perfisDono.map((p) => (p.handle || '').toLowerCase()).filter(Boolean))
-      const byP = new Map<string, { pessoa: string; total: number; like: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
+      const byP = new Map<string, { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
       for (const it of items) {
         if (donoHandles.has((it.pessoa || '').toLowerCase())) continue
-        const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
+        const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, likeIG: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
         e.total++
-        if (it.tipo === 'like') e.like++; else if (it.tipo === 'comment') e.comment++; else if (it.tipo === 'share') e.share++
+        if (it.tipo === 'like') { e.like++; if (it.plataforma === 'facebook') e.likeFB++; else if (it.plataforma === 'instagram') e.likeIG++ }
+        else if (it.tipo === 'comment') e.comment++; else if (it.tipo === 'share') e.share++
         e.plataformas.add(it.plataforma); e.posts.add(it.postId)
         if (it.data > e.ultima) e.ultima = it.data
         byP.set(it.pessoa, e)
@@ -200,26 +213,27 @@ export async function GET(req: NextRequest) {
           const nome = String(f.nome || f.username || '').trim()
           if (!nome || donoHandles.has(nome.toLowerCase())) continue
           if (pessoa && !nome.toLowerCase().includes(pessoa)) continue
-          const e = byP.get(nome) || { pessoa: nome, total: 0, like: 0, comment: 0, share: 0, plataformas: new Set<string>(['instagram']), posts: new Set<string>(), ultima: new Date(0) }
+          const e = byP.get(nome) || { pessoa: nome, total: 0, like: 0, likeIG: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(['instagram']), posts: new Set<string>(), ultima: new Date(0) }
           e.like += f.totalLikes
+          e.likeIG += f.totalLikes
           e.total += f.totalLikes
           e.plataformas.add('instagram')
           byP.set(nome, e)
         }
       }
       const pessoas = Array.from(byP.values())
-        .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
+        .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, likeIG: e.likeIG, likeFB: e.likeFB, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
         .sort((a, b) => b.total - a.total)
       if (formato === 'csv') {
-        const head = ['posicao', 'pessoa', 'total', 'comentarios', 'likes', 'shares', 'plataformas', 'posts_distintos', 'ultima_interacao']
-        const linhas = pessoas.map((p, i) => [i + 1, p.pessoa, p.total, p.comment, p.like, p.share, p.plataformas.join(' '), p.nPosts, new Date(p.ultima).toISOString()])
+        const head = ['posicao', 'pessoa', 'total', 'comentarios', 'curtidas_ig', 'curtidas_fb', 'shares', 'plataformas', 'posts_distintos', 'ultima_interacao']
+        const linhas = pessoas.map((p, i) => [i + 1, p.pessoa, p.total, p.comment, p.likeIG, p.likeFB, p.share, p.plataformas.join(' '), p.nPosts, new Date(p.ultima).toISOString()])
         return csvResp([head, ...linhas], `ranking-interacoes`)
       }
       return NextResponse.json({ stats, data: pessoas.slice(0, 2000) })
     }
     if (formato === 'csv') {
-      const head = ['data', 'pessoa', 'tipo', 'plataforma', 'post', 'texto']
-      const linhas = items.map((it) => [new Date(it.data).toISOString(), it.pessoa, it.tipo, it.plataforma, it.postId, it.texto ?? ''])
+      const head = ['data', 'pessoa', 'tipo', 'plataforma', 'post', 'post_url', 'post_legenda', 'texto']
+      const linhas = items.map((it) => [new Date(it.data).toISOString(), it.pessoa, it.tipo, it.plataforma, it.postId, it.postUrl ?? '', it.postLegenda ?? '', it.texto ?? ''])
       return csvResp([head, ...linhas], `interacoes`)
     }
     return NextResponse.json({ stats, data: items.slice(0, 500) })

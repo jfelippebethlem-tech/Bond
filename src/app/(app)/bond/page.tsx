@@ -6,7 +6,7 @@ import {
   Lightbulb, Pencil, Send, Twitter, Instagram, Facebook,
   Heart, MessageCircle, Share2, Eye, TrendingUp, Bot,
   Copy, CheckCheck, Save, Trash2, ChevronRight, Trophy,
-  MessageSquare, Check, X, Star, Medal, Crown,
+  MessageSquare, Check, X, Star, Medal, Crown, ExternalLink,
 } from 'lucide-react'
 import { formatDistanceToNow } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
@@ -16,7 +16,7 @@ type Post = { id: string; plataforma: string; postId: string; conteudo: string; 
 type Fa = { id: string; plataforma: string; nome?: string; username?: string; totalLikes: number; totalComents: number; totalShares: number; ultimaInter?: string; pessoa?: { id: string; nome: string; tipo: string } | null }
 type RankingItem = { plataforma: string; externalId?: string; nome?: string | null; username?: string | null; score: number; totalLikes?: number; totalComents?: number; totalShares?: number; likes?: number; comments?: number; shares?: number; pessoa?: { id: string; nome: string; tipo: string } | null }
 type RankingCaboItem = { pessoaId: string; nome: string; tipo: string; cargo?: string | null; instagram?: string | null; twitter?: string | null; facebook?: string | null; plataformas: string[]; totalLikes: number; totalComents: number; totalShares: number; score: number }
-type Comentario = { id: string; plataforma: string; postId: string; comentarioId: string; autor?: string | null; autorId?: string | null; texto: string; respondido: boolean; sugestaoIA?: string | null; respostaFinal?: string | null; criadoEm: string; categoria?: string; isCabo?: boolean }
+type Comentario = { id: string; plataforma: string; postId: string; comentarioId: string; autor?: string | null; autorId?: string | null; texto: string; respondido: boolean; sugestaoIA?: string | null; respostaFinal?: string | null; criadoEm: string; categoria?: string; isCabo?: boolean; postUrl?: string | null; postLegenda?: string | null }
 type Insight = { id: string; titulo: string; descricao: string; tipo: string; plataforma?: string; lido: boolean; criadoEm: string }
 type Rascunho = { id: string; titulo?: string; texto: string; plataformas: string; hashtags?: string; status: string; criadoEm: string }
 type Msg = { role: 'user' | 'assistant'; content: string }
@@ -641,7 +641,14 @@ export default function BondPage() {
                       </div>
 
                       {/* Texto do comentário */}
-                      <p className="text-sm text-gray-800 bg-gray-50 rounded-lg px-3 py-2 mb-3">&ldquo;{com.texto}&rdquo;</p>
+                      <p className="text-sm text-gray-800 bg-gray-50 rounded-lg px-3 py-2 mb-1">&ldquo;{com.texto}&rdquo;</p>
+                      {/* Em qual post foi feito + link */}
+                      {(com.postUrl || com.postLegenda) && (
+                        <a href={com.postUrl || '#'} target={com.postUrl ? '_blank' : undefined} rel="noreferrer" title={com.postLegenda || ''}
+                          className={`inline-flex items-center gap-1 text-xs mb-3 ${com.postUrl ? 'text-blue-600 hover:underline' : 'text-gray-400 pointer-events-none'}`}>
+                          <ExternalLink size={12} /> no post: {com.postLegenda || `post ${com.postId.slice(0, 8)}…`}
+                        </a>
+                      )}
 
                       {/* Área de resposta */}
                       {editandoId === com.comentarioId ? (
