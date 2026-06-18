@@ -397,7 +397,7 @@ export async function syncInstagram(limitPosts = 20) {
     })
 
     for (const c of comments) {
-      await upsertFa('instagram', c.id, c.username, c.username, 'comment')
+      if (c.username) await upsertFa('instagram', c.username, c.username, c.username, 'comment')
       const cdt = c.timestamp ? new Date(c.timestamp) : undefined
       await registrarInteracao('instagram', c.id, 'comment', post.id, cdt)
       if (c.text) {
@@ -407,7 +407,7 @@ export async function syncInstagram(limitPosts = 20) {
       const replies = (c.replies?.data ?? []) as { id: string; username?: string; text?: string; timestamp?: string }[]
       for (const r of replies) {
         if (!r.username) continue
-        await upsertFa('instagram', r.id, r.username, r.username, 'comment')
+        await upsertFa('instagram', r.username, r.username, r.username, 'comment')
         const rdt = r.timestamp ? new Date(r.timestamp) : undefined
         await registrarInteracao('instagram', r.id, 'comment', post.id, rdt)
         if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text, rdt)
@@ -416,7 +416,25 @@ export async function syncInstagram(limitPosts = 20) {
     synced++
   }
 
+  // Recomputa totalComents do IG a partir de BondComentario (fonte idempotente, keyed por
+  // comentarioId). NECESSÁRIO porque upsertFa é idempotente (não incrementa) — sem isto os
+  // comentários não entrariam no score. SET, não increment → roda a cada sync sem inflar.
+  await recomputarComentariosIG()
+
   return { synced, perfilId: perfil.id }
+}
+
+// Recompute idempotente: totalComents de cada fã IG = nº de comentários distintos dele em
+// BondComentario (autor = username). Substitui o increment não-idempotente (que inflaria no
+// re-sync de 30min). BondFa do IG é keyed por username (migração 2026-06-18).
+async function recomputarComentariosIG() {
+  await prisma.$executeRawUnsafe(
+    `UPDATE BondFa SET totalComents = (
+       SELECT COUNT(DISTINCT bc.comentarioId) FROM BondComentario bc
+       WHERE bc.plataforma = 'instagram' AND bc.autor = BondFa.username
+     ), atualizadoEm = CURRENT_TIMESTAMP
+     WHERE plataforma = 'instagram' AND username IS NOT NULL AND username != ''`,
+  )
 }
 
 // ── Sync all platforms ────────────────────────────────────────────────────────
