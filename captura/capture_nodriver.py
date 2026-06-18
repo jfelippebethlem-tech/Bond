@@ -177,6 +177,13 @@ async def main():
     browser = await uc.start(user_data_dir=PROFILE, headless=False)
     try:
         tab = await browser.get("https://www.instagram.com/"); await sleep(rand(3, 7))
+        # LOGIN: espera você logar na conta-teste se a tela de login aparecer (até ~5 min).
+        for i in range(30):
+            try: form = await tab.select('input[name="username"]', timeout=2)
+            except Exception: form = None
+            if not form: break
+            if i == 0: print("🔑 NAO logado. Faca login na CONTA-TESTE na janela (usuario+senha+2FA). Aguardando ate 5 min...")
+            await sleep(rand(8, 12))
         await rolar(tab, 683, 400, randint(2, 5)); await sleep(rand(0.8, 2.5))
         fila = await descobrir_posts(tab)
         if not fila: print("nada novo"); status(True, "nada_novo"); return
