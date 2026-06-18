@@ -30,8 +30,8 @@ usernames **DEPOIS, fora do Instagram** (parser na VM). Zero injeção de códig
 ```
 DESKTOP (IP residencial, Hermes dirige)                VM jfn-core (NÃO toca o IG)
 ────────────────────────────────────────              ─────────────────────────────
-captura/  (3 motores, MESMA saída)                     parse/parse_likers.py (Gemini visão)
-  capture.mjs        IG_ENGINE=cdp|playwright            lê os prints → @usernames
+captura/  (2 motores, MESMA saída)                     parse/parse_likers.py (Gemini visão)
+  capture.mjs        IG_ENGINE=cdp                        lê os prints → @usernames
   capture_nodriver.py IG_ENGINE=nodriver                 dedup → likers.json + posts-meta.json
    → mouse + screenshot, 15–200s/post aleatório   ──┐         │ grava em LIKERS_OUT_DIR
    → shots/<target>/<code>/{post_1.png,             │ Syncthing │
@@ -39,21 +39,23 @@ captura/  (3 motores, MESMA saída)                     parse/parse_likers.py (G
                                                                   → BondFa → site /interacoes
 ```
 
-**Os 3 motores, do mais seguro ao menor esforço:**
+**Os 2 motores (o Playwright foi REMOVIDO — ver nota abaixo):**
 | Motor | `IG_ENGINE` | Rastros | Quando |
 |---|---|---|---|
 | **nodriver** (Python) | `nodriver` | CDP-nativo, **sem** globals de Playwright, sem webdriver | padrão-ouro — preferir |
 | **CDP cru** (Node) | `cdp` | sem Playwright, sem `Runtime.evaluate`, coords via DOM domain | ótimo, fica em Node |
-| **Playwright** (Node) | `playwright` | risco residual dos globals do Playwright | comparação / menor mudança |
 
-Todos escrevem **a mesma saída** → o parser e o site não sabem (nem se importam com) qual motor rodou.
+Os dois escrevem **a mesma saída** → o parser e o site não sabem (nem se importam com) qual motor rodou.
+
+> 🗑️ **Playwright descartado:** ele injeta globals (`__pwInitScripts`/`__playwright__binding__`) que a Meta
+> pode sondar e que **não dá pra eliminar** (só reduzir). Não vale o risco de ban — ficamos só com nodriver e CDP cru.
 
 ---
 
 ## 3. Pré-requisitos no desktop (uma vez)
 1. **Chrome real instalado** + um **perfil dedicado** logado no Instagram (`C:\jfn\ig-profile`).
    Logar **na mão** a primeira vez (usuário+senha+2FA); a sessão fica salva no perfil.
-2. Para os motores `cdp` e `playwright` conectado — abrir o Chrome com depuração:
+2. Para o motor `cdp` — abrir o Chrome com depuração:
    ```
    chrome.exe --remote-debugging-port=9222 --user-data-dir="C:\jfn\ig-profile"
    ```
@@ -76,12 +78,10 @@ Todos escrevem **a mesma saída** → o parser e o site não sabem (nem se impor
 ## 5. Como o Hermes roda (passo a passo)
 **Desktop — captura (1 motor por vez no teste; o escolhido em produção):**
 ```bash
+# motor nodriver (padrão-ouro)
+IG_TARGET_USER=<perfil_teste> python captura/capture_nodriver.py
 # motor CDP cru (precisa do Chrome aberto com --remote-debugging-port=9222)
-IG_ENGINE=cdp        IG_TARGET_USER=<perfil_teste> node captura/capture.mjs
-# motor Playwright
-IG_ENGINE=playwright IG_TARGET_USER=<perfil_teste> node captura/capture.mjs
-# motor nodriver
-IG_ENGINE=nodriver   IG_TARGET_USER=<perfil_teste> python captura/capture_nodriver.py
+IG_ENGINE=cdp IG_TARGET_USER=<perfil_teste> node captura/capture.mjs
 ```
 Saída: `captura/shots/<target>/<code>/` com `post_1.png`, `likes_0001.png…`, `manifest.json`.
 O Syncthing leva pra VM (`~/likers-sync/captura/shots/`).
@@ -122,7 +122,28 @@ roda headless, zero login). Para usar a **cota da sua assinatura Plus** com `gem
 
 ---
 
-## 7. Regras de segurança (não negociáveis)
+## 7. Validação de 1 post (DE-RISCA antes de qualquer volume)
+Na primeira vez, rode com **1 post só**, na **conta-teste**, **vendo a janela do Chrome**:
+```bash
+IG_NUM_POSTS=1 IG_TARGET_USER=<perfil_publico> python captura/capture_nodriver.py   # ou: IG_ENGINE=cdp node captura/capture.mjs
+```
+Confira a olho: (a) abriu o perfil, (b) entrou no post, (c) **abriu o modal de curtidas**
+(`modalAbriu` no log), (d) gerou `likes_*.png` em `captura/shots/<perfil>/<code>/`.
+Depois depure SÓ esse post na VM e veja quantos @ o Gemini achou:
+```bash
+cd ~/likers-sync && python3 parse/parse_likers.py
+```
+**Modal abriu + Gemini achou N>0 usernames = pipeline validado fim-a-fim, sem risco** (foi na
+conta-teste). Só ENTÃO aumente `IG_NUM_POSTS` e, por último, troque pra sua conta.
+
+> **Como o modal abre:** 1º por **clique** no link de curtidas (humano); se o seletor do IG tiver
+> mudado, cai no **fallback de navegação `/p/<code>/liked_by/`** — confirmado abrindo o mesmo modal.
+> ⛔ O tool original (`Sagargupta16/InstagramLikesLeaderboard`, o que se cola no F12) é **100% API REST**
+> (`/api/v1/media/<pk>/likers/`) — esse endpoint está **MORTO/banido** pra conta (devolve HTML). Por isso
+> a captura nova **não usa API nenhuma**: só modal + screenshot. E o ritmo dele (cooldown fixo 30s a cada
+> 65 req + retry 5×) é **mecanizado demais** — o nosso é 100% aleatório (15–200s/post, descanso a cada 3–7 posts).
+
+## 8. Regras de segurança (não negociáveis)
 - 🛑 **Nunca rodar a captura pela VM** (IP de datacenter = ban). Captura só no desktop residencial.
 - 🛑 **`.pause_captura`**: se existir em `~/likers-sync` / `LIKERS_OUT_DIR` / `shots`, a captura sai
   sem tocar o IG. A VM cria esse arquivo quando suspeita de bloqueio; só apagar após cooldown.

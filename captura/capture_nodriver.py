@@ -120,23 +120,29 @@ async def capturar_post(tab, code):
            "capturadoEm": datetime.datetime.utcnow().isoformat() + "Z",
            "postShots": [], "likeShots": [], "modalAbriu": False}
     await tab.get(url); await sleep(rand(2, 6))
-    await tab.save_screenshot(os.path.join(d, "post_1.png")); man["postShots"].append("post_1.png")
+    # format="png" é OBRIGATÓRIO: o default do nodriver é jpeg (salvaria JPEG num .png)
+    await tab.save_screenshot(os.path.join(d, "post_1.png"), format="png"); man["postShots"].append("post_1.png")
 
-    alvo = await centro_do(tab, 'a[href$="/liked_by/"]') or await centro_do(tab, 'a[href*="liked_by"]')
-    if not alvo:
-        json.dump(man, open(os.path.join(d, "manifest.json"), "w"), indent=2, ensure_ascii=False)
-        return {"code": code, "modalAbriu": False}
-    cx, cy, _, _, el = alvo
-    try: await el.mouse_move(); await sleep(rand(0.12, 0.5)); await el.click()
-    except Exception:
-        json.dump(man, open(os.path.join(d, "manifest.json"), "w"), indent=2, ensure_ascii=False)
-        return {"code": code, "modalAbriu": False}
+    async def esperar_dialog():
+        for _ in range(14):
+            dc = await centro_do(tab, 'div[role="dialog"]')
+            if dc and dc[2] > 100 and dc[3] > 100: return dc
+            await sleep(rand(0.25, 0.6))
+        return None
 
+    # abrir curtidas: 1º clique humano no link; senão FALLBACK navegando pra /liked_by/
     dlg = None
-    for _ in range(14):
-        dlg = await centro_do(tab, 'div[role="dialog"]')
-        if dlg: break
-        await sleep(rand(0.25, 0.6))
+    alvo = await centro_do(tab, 'a[href$="/liked_by/"]') or await centro_do(tab, 'a[href*="liked_by"]')
+    if alvo:
+        try:
+            await alvo[4].mouse_move(); await sleep(rand(0.12, 0.5)); await alvo[4].click()
+            dlg = await esperar_dialog()
+        except Exception: dlg = None
+    if not dlg:
+        man["viaLikedByUrl"] = True
+        try: await tab.get(f"https://www.instagram.com/p/{code}/liked_by/"); await sleep(rand(1.5, 3))
+        except Exception: pass
+        dlg = await esperar_dialog()
     if not dlg:
         json.dump(man, open(os.path.join(d, "manifest.json"), "w"), indent=2, ensure_ascii=False)
         return {"code": code, "modalAbriu": False}
@@ -145,7 +151,7 @@ async def capturar_post(tab, code):
     fim = time.time() + tempo_post_ms() / 1000.0; n = 0
     while time.time() < fim and n < MAX_SHOTS:
         n += 1; shot = f"likes_{n:04d}.png"
-        await tab.save_screenshot(os.path.join(d, shot)); man["likeShots"].append(shot)
+        await tab.save_screenshot(os.path.join(d, shot), format="png"); man["likeShots"].append(shot)
         dc = await centro_do(tab, 'div[role="dialog"]') or dlg
         await rolar(tab, dc[0], dc[1], randint(1, 2)); await sleep(rand(0.4, 1.1))
     while time.time() < fim:
