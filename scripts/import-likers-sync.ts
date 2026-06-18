@@ -13,8 +13,8 @@ const prisma = new PrismaClient()
 // sincronizada -> o arquivo cai em ~/likers-sync/likers-sync/likers.json. Antes o
 // importador olhava só o caminho raso e nunca achava. Agora: env explícito ->
 // senão varre ~/likers-sync e pega a likers.json MAIS RECENTE.
-function resolverArq(): string {
-  if (process.env.LIKERS_SYNC_FILE) return process.env.LIKERS_SYNC_FILE
+function acharMaisRecente(nome: string, envOverride?: string): string {
+  if (envOverride && process.env[envOverride]) return process.env[envOverride] as string
   const base = path.join(os.homedir(), 'likers-sync')
   const achados: string[] = []
   const ignorar = new Set(['node_modules', '.stversions', '.git', '.next'])
@@ -26,17 +26,18 @@ function resolverArq(): string {
       if (ignorar.has(e.name)) continue
       const p = path.join(dir, e.name)
       if (e.isDirectory()) walk(p, depth + 1)
-      else if (e.name === 'likers.json') achados.push(p)
+      else if (e.name === nome) achados.push(p)
     }
   }
   walk(base, 0)
-  if (!achados.length) return path.join(base, 'likers.json')
+  if (!achados.length) return path.join(base, nome)
   achados.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
   return achados[0]
 }
-const ARQ = resolverArq()
+const ARQ = acharMaisRecente('likers.json', 'LIKERS_SYNC_FILE')
 const MARCA = path.join(os.homedir(), '.likers_imported') // fora da pasta sincronizada (receiveonly)
-const STATUS = path.join(os.homedir(), 'likers-sync', 'likers-status.json')
+// STATUS tambem pelo walker (Licao 10: estava em caminho raso fixo -> nunca achava o aninhado -> aviso Telegram nao disparava)
+const STATUS = acharMaisRecente('likers-status.json')
 const STATUS_MARCA = path.join(os.homedir(), '.likers_status_avisado')
 
 // Lê o status da captura (escrito pelo desktop) e AVISA no Telegram se precisar logar.
