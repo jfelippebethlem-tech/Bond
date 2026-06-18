@@ -159,6 +159,15 @@ async function descobrirPosts(driver, opts) {
 export async function rodarCaptura(driver, opts) {
   const ledger = carregarLedger(opts.ledgerFile)
   await driver.goto('https://www.instagram.com/')
+  // LOGIN: se a tela de login aparecer, espera você logar na janela (até ~5 min).
+  // Só OLHA o DOM (boxOf via CDP) — não injeta nada. Sem isso, num desktop novo
+  // (perfil ainda não logado) o teste falharia direto.
+  for (let i = 0; i < 30; i++) {
+    const form = await driver.boxOf(['input[name="username"]', 'input[name="password"]'])
+    if (!form) break
+    if (i === 0) console.log('🔑 NÃO logado. Faça login na CONTA-TESTE na janela que abriu (usuário + senha + 2FA). Aguardando até 5 min...')
+    await sleep(rand(8000, 12000))
+  }
   await pausaLeitura(3000, 7000)
   // warm-up: rola o feed um pouco como quem abriu o app
   const vp = driver.viewport()
