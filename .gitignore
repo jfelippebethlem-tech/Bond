@@ -48,3 +48,8 @@ ig-profile/
 likers-sync/
 resposta.json
 comando.json
+captura/shots/
+captura/.env
+captura/shots
+parse/__pycache__/
+captura/__pycache__/
