@@ -188,6 +188,8 @@ model BondFa {
   atualizadoEm DateTime @updatedAt
 
   @@unique([plataforma, externalId])
+  @@index([plataforma, totalLikes])
+  @@index([username])
 }
 
 model BondInteracao {
@@ -200,6 +202,8 @@ model BondInteracao {
   criadoEm  DateTime @default(now())   // hora da INGESTÃO/sync
 
   @@unique([plataforma, externalId, tipo, postId])
+  @@index([plataforma, tipo])
+  @@index([publicadoEm])
 }
 
 model BondComentario {
@@ -217,6 +221,8 @@ model BondComentario {
   criadoEm     DateTime @default(now())   // hora da INGESTÃO/sync (NÃO é a data real do comentário)
 
   @@unique([plataforma, comentarioId])
+  @@index([plataforma, autor])
+  @@index([publicadoEm])
 }
 
 model BondEstilo {
