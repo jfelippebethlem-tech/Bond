@@ -72,18 +72,22 @@ async function upsertFa(
   username: string | null,
   tipo: 'like' | 'comment' | 'share' = 'like',
 ) {
-  // Incrementa SOMENTE o contador correspondente ao tipo de interação.
-  // Antes só totalLikes era gravado — totalComents/totalShares ficavam sempre 0,
-  // zerando os termos *2 e *3 da fórmula de score.
-  const inc = { increment: 1 } as const
+  // ⚠️ IDEMPOTENTE de propósito (correção 2026-06-18): NÃO incrementa contadores.
+  // O sync re-processa TODOS os comentários/likers a cada ciclo (30min) — um
+  // `increment` aqui INFLARIA totalComents/totalShares/totalLikes a cada run (era o
+  // risco do fix anterior, revertido). Os totais têm de vir de fontes IDEMPOTENTES:
+  //   - totalLikes (IG): SET pelo import dos curtidores do desktop (likers.json).
+  //   - totalComents/totalShares: recompute (COUNT em BondComentario por username) —
+  //     [BACKLOG] junto com chavear BondFa do IG por username (hoje por id-do-comentário,
+  //     o que infla a CONTAGEM de fãs: 10.771 linhas vs 2.578 pessoas). Ver vault.
+  // Aqui só garantimos a EXISTÊNCIA do fã + identidade atualizada (sem dobrar nada).
+  // O parâmetro `tipo` é mantido na assinatura para o recompute futuro.
+  void tipo
   await prisma.bondFa.upsert({
     where: { plataforma_externalId: { plataforma, externalId } },
     update: {
       nome: nome ?? undefined,
       username: username ?? undefined,
-      totalLikes: tipo === 'like' ? inc : undefined,
-      totalComents: tipo === 'comment' ? inc : undefined,
-      totalShares: tipo === 'share' ? inc : undefined,
       ultimaInter: new Date(),
     },
     create: {
@@ -91,9 +95,9 @@ async function upsertFa(
       externalId,
       nome,
       username,
-      totalLikes: tipo === 'like' ? 1 : 0,
-      totalComents: tipo === 'comment' ? 1 : 0,
-      totalShares: tipo === 'share' ? 1 : 0,
+      totalLikes: 0,
+      totalComents: 0,
+      totalShares: 0,
       ultimaInter: new Date(),
     },
   })
