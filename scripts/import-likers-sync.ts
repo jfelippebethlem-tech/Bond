@@ -8,9 +8,37 @@ import os from 'os'
 import { PrismaClient } from '@prisma/client'
 
 const prisma = new PrismaClient()
-const ARQ = process.env.LIKERS_SYNC_FILE || path.join(os.homedir(), 'likers-sync', 'likers.json')
+// Resolve o likers.json de forma ROBUSTA: o desktop escreve em LIKERS_OUT_DIR
+// (ex.: C:\jfn\bond\likers-sync) e o Syncthing pode aninhar isso dentro da raiz
+// sincronizada -> o arquivo cai em ~/likers-sync/likers-sync/likers.json, não em
+// ~/likers-sync/likers.json. Antes o importador olhava só o caminho raso e nunca
+// achava (bug "site não foi alimentado"). Agora: env explícito -> senão varre
+// ~/likers-sync e pega a likers.json MAIS RECENTE (ignora node_modules/.stversions).
+function acharMaisRecente(nome: string, envOverride?: string): string {
+  if (envOverride && process.env[envOverride]) return process.env[envOverride] as string
+  const base = path.join(os.homedir(), 'likers-sync')
+  const achados: string[] = []
+  const ignorar = new Set(['node_modules', '.stversions', '.git', '.next'])
+  const walk = (dir: string, depth: number) => {
+    if (depth > 3) return
+    let ents: fs.Dirent[]
+    try { ents = fs.readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const e of ents) {
+      if (ignorar.has(e.name)) continue
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) walk(p, depth + 1)
+      else if (e.name === nome) achados.push(p)
+    }
+  }
+  walk(base, 0)
+  if (!achados.length) return path.join(base, nome)
+  achados.sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs)
+  return achados[0]
+}
+const ARQ = acharMaisRecente('likers.json', 'LIKERS_SYNC_FILE')
 const MARCA = path.join(os.homedir(), '.likers_imported') // fora da pasta sincronizada (receiveonly)
-const STATUS = path.join(os.homedir(), 'likers-sync', 'likers-status.json')
+// STATUS tambem pelo walker (Licao 10: estava em caminho raso fixo -> nunca achava o aninhado -> aviso Telegram nao disparava)
+const STATUS = acharMaisRecente('likers-status.json')
 const STATUS_MARCA = path.join(os.homedir(), '.likers_status_avisado')
 
 // Lê o status da captura (escrito pelo desktop) e AVISA no Telegram se precisar logar.
