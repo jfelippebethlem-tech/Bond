@@ -575,6 +575,14 @@ export async function buscarComentariosPendentes() {
     take: 50,
   })
 
+  // Em qual POST cada comentário foi feito (join por postId = BondPost.postId, id da plataforma).
+  // Batch (sem N+1): traz legenda curta + link clicável do post original.
+  const postIds = Array.from(new Set(comentarios.map(c => c.postId).filter(Boolean)))
+  const posts = postIds.length
+    ? await prisma.bondPost.findMany({ where: { postId: { in: postIds } }, select: { postId: true, url: true, conteudo: true } })
+    : []
+  const postMap = new Map(posts.map(p => [p.postId, p]))
+
   // Enriquece com categoria e flag de cabo eleitoral
   const enriquecidos = await Promise.all(
     comentarios.map(async com => {
@@ -590,7 +598,9 @@ export async function buscarComentariosPendentes() {
         isCabo = fa?.pessoa?.tipo === 'cabo_eleitoral' || fa?.pessoa?.tipo === 'coordenador'
       }
 
-      return { ...com, categoria, isCabo }
+      const post = postMap.get(com.postId)
+      const postLegenda = post ? (post.conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 80) : null
+      return { ...com, categoria, isCabo, postUrl: post?.url ?? null, postLegenda }
     })
   )
 

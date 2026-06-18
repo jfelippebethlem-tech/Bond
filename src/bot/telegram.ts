@@ -416,8 +416,17 @@ bot.on('message', async (msg) => {
     return
   }
 
-  // Mensagens do próprio dono que NÃO são comando: não viram "contato do gabinete"
-  if (isOwner(msg)) return
+  // Mensagens do próprio dono que NÃO são comando: registra (p/ o assistente VER as respostas
+  // do dono — antes eram descartadas em silêncio) e NÃO viram "contato do gabinete".
+  if (isOwner(msg)) {
+    try {
+      const dir = path.join(process.cwd(), 'data')
+      fs.mkdirSync(dir, { recursive: true })
+      fs.appendFileSync(path.join(dir, 'owner_messages.jsonl'), JSON.stringify({ at: new Date().toISOString(), text }) + '\n')
+    } catch { /* sem persistência não é fatal */ }
+    console.log(`[DONO] ${text}`)
+    return
+  }
 
   // ── Mensagem de cidadão → entra na caixa do gabinete ──
   const userId = msg.from?.id ? String(msg.from.id) : null

@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Heart, MessageCircle, Share2, Users, List, Search, RefreshCw, Loader2,
-  Radio, Activity, Image as ImageIcon, Download,
+  Radio, Activity, Image as ImageIcon, Download, ExternalLink,
 } from 'lucide-react'
 
-type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string }
-type Pessoa = { pessoa: string; total: number; like: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
+type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
+type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
 type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
@@ -118,7 +118,7 @@ export default function InteracoesPage() {
   return (
     <div className="p-4 md:p-6 max-w-6xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
-        <h1 className="text-2xl font-bold text-gray-900">Interações</h1>
+        <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2"><Activity className="text-indigo-600" /> Interações</h1>
         <div className="flex items-center gap-2">
           <button onClick={() => setAoVivo((v) => !v)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition ${aoVivo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
             <Radio size={15} className={aoVivo ? 'animate-pulse' : ''} /> {aoVivo ? 'Ao vivo' : 'Ao vivo'}
@@ -206,14 +206,15 @@ export default function InteracoesPage() {
         <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide">
-              <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center"><Heart size={14} className="text-rose-500 inline" /></th><th className="px-3 py-3 text-center"><MessageCircle size={14} className="text-blue-500 inline" /></th><th className="px-3 py-3 text-center"><Share2 size={14} className="text-green-600 inline" /></th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
+              <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center whitespace-nowrap" title="Curtidas no Instagram (coletor do desktop)"><Heart size={13} className="text-rose-500 inline" /> IG</th><th className="px-3 py-3 text-center whitespace-nowrap" title="Curtidas no Facebook (exige permissão pages_read_user_content no token)"><Heart size={13} className="text-blue-500 inline" /> FB</th><th className="px-3 py-3 text-center" title="Comentários"><MessageCircle size={14} className="text-blue-500 inline" /></th><th className="px-3 py-3 text-center" title="Compartilhamentos"><Share2 size={14} className="text-green-600 inline" /></th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {pessoas.map((p, i) => (
                 <tr key={p.pessoa} className="hover:bg-gray-50">
                   <td className={`px-3 py-2.5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-gray-400'}`}>{i + 1}º</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.pessoa}</td>
-                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.like || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.likeIG || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-blue-700 font-medium">{p.likeFB || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-blue-600 font-medium">{p.comment || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-green-600 font-medium">{p.share || '—'}</td>
                   <td className="px-3 py-2.5 text-center font-bold text-gray-900">{p.total}</td>
@@ -222,7 +223,7 @@ export default function InteracoesPage() {
                   <td className="px-3 py-2.5 text-right">{p.comment > 0 && <button onClick={() => { setPessoa(p.pessoa); setTipo('comment'); setModo('lista') }} className="text-blue-600 hover:underline text-xs whitespace-nowrap">ver comentários →</button>}</td>
                 </tr>
               ))}
-              {pessoas.length === 0 && <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">Nenhuma interação no período/filtros.</td></tr>}
+              {pessoas.length === 0 && <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">Nenhuma interação no período/filtros.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -239,7 +240,14 @@ export default function InteracoesPage() {
                   <td className="px-3 py-2.5">{it.tipo === 'like' ? <Heart size={15} className="text-rose-500" /> : it.tipo === 'comment' ? <MessageCircle size={15} className="text-blue-500" /> : <Share2 size={15} className="text-green-600" />}</td>
                   <td className="px-3 py-2.5"><span className={`text-xs px-2 py-0.5 rounded ${REDE(it.plataforma)}`}>{it.plataforma}</span></td>
                   <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">{it.pessoa}</td>
-                  <td className="px-4 py-2.5 text-gray-600">{it.texto ? it.texto : <span className="inline-flex items-center gap-1 text-gray-400 text-xs"><ImageIcon size={13} /> post {it.postId.slice(0, 8)}…</span>}</td>
+                  <td className="px-4 py-2.5 text-gray-600">
+                    {it.texto && <div className="text-gray-700">{it.texto}</div>}
+                    {(it.postUrl || it.postLegenda) ? (
+                      <a href={it.postUrl || '#'} target="_blank" rel="noreferrer" className={`mt-0.5 inline-flex items-center gap-1 text-xs ${it.postUrl ? 'text-blue-600 hover:underline' : 'text-gray-400 pointer-events-none'}`} title={it.postLegenda || ''}>
+                        <ExternalLink size={12} /> no post: {it.postLegenda || `post ${it.postId.slice(0, 8)}…`}
+                      </a>
+                    ) : (!it.texto && <span className="inline-flex items-center gap-1 text-gray-400 text-xs"><ImageIcon size={13} /> post {it.postId.slice(0, 8)}…</span>)}
+                  </td>
                 </tr>
               ))}
               {lista.length === 0 && <tr><td colSpan={5} className="px-4 py-10 text-center text-gray-400">Nenhuma interação no período/filtros.</td></tr>}
