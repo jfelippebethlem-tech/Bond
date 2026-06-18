@@ -51,14 +51,36 @@ model Demanda {
   id           String   @id @default(cuid())
   titulo       String
   descricao    String
-  status       String   @default("aberta")
+  status       String   @default("aberta")  // "aberta" | "andamento" | "resolvida"
   prioridade   String   @default("media")
-  origem       String?
+  origem       String?  // "telegram" | "painel" | "whatsapp" | ...
+  responsavel  String?  // quem responde pela demanda (nome/handle)
+  prazo        DateTime?            // prazo-alvo opcional
   pessoaId     String?
   pessoa       Pessoa?  @relation(fields: [pessoaId], references: [id])
   resposta     String?
+  alertadoEm   DateTime?            // última vez que o alerta diário (vermelho) disparou
+  resolvidoEm  DateTime?            // quando virou "resolvida"
+  passos       DemandaPasso[]
   criadoEm    DateTime @default(now())
   atualizadoEm DateTime @updatedAt
+
+  @@index([status, criadoEm])
+}
+
+// Passos de execução de uma demanda — colaborativo (cada um com responsável e check).
+model DemandaPasso {
+  id          String   @id @default(cuid())
+  demandaId   String
+  demanda     Demanda  @relation(fields: [demandaId], references: [id], onDelete: Cascade)
+  descricao   String
+  feito       Boolean  @default(false)
+  responsavel String?
+  ordem       Int      @default(0)
+  criadoEm    DateTime @default(now())
+  feitoEm     DateTime?
+
+  @@index([demandaId, ordem])
 }
 
 model Atividade {

@@ -4,7 +4,7 @@ import { prisma } from '@/lib/db'
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
   const demanda = await prisma.demanda.findUnique({
     where: { id: params.id },
-    include: { pessoa: true },
+    include: { pessoa: true, passos: { orderBy: { ordem: 'asc' } } },
   })
 
   if (!demanda) {
@@ -16,19 +16,24 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json()
+  // ao mudar para "resolvida", carimba resolvidoEm (e limpa quando reabre)
+  const virouResolvida = body.status === 'resolvida'
 
   const demanda = await prisma.demanda.update({
     where: { id: params.id },
     data: {
-      titulo: body.titulo,
-      descricao: body.descricao,
-      status: body.status,
-      prioridade: body.prioridade,
-      origem: body.origem || null,
-      pessoaId: body.pessoaId || null,
-      resposta: body.resposta || null,
+      ...(body.titulo !== undefined ? { titulo: body.titulo } : {}),
+      ...(body.descricao !== undefined ? { descricao: body.descricao } : {}),
+      ...(body.status !== undefined ? { status: body.status } : {}),
+      ...(body.prioridade !== undefined ? { prioridade: body.prioridade } : {}),
+      ...(body.origem !== undefined ? { origem: body.origem || null } : {}),
+      ...(body.responsavel !== undefined ? { responsavel: body.responsavel || null } : {}),
+      ...(body.prazo !== undefined ? { prazo: body.prazo ? new Date(body.prazo) : null } : {}),
+      ...(body.pessoaId !== undefined ? { pessoaId: body.pessoaId || null } : {}),
+      ...(body.resposta !== undefined ? { resposta: body.resposta || null } : {}),
+      ...(body.status !== undefined ? { resolvidoEm: virouResolvida ? new Date() : null } : {}),
     },
-    include: { pessoa: true },
+    include: { pessoa: true, passos: { orderBy: { ordem: 'asc' } } },
   })
 
   return NextResponse.json(demanda)

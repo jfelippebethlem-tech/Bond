@@ -39,7 +39,7 @@ export async function GET(req: NextRequest) {
       where: { ...(plataforma ? { plataforma } : {}), ...((de || ate) ? { publicadoEm: dateW } : {}) },
       orderBy,
       take: 300,
-      select: { id: true, plataforma: true, tipo: true, conteudo: true, url: true, imagemUrl: true, likes: true, comentarios: true, alcance: true, engajamento: true, publicadoEm: true },
+      select: { id: true, postId: true, plataforma: true, tipo: true, conteudo: true, url: true, imagemUrl: true, likes: true, comentarios: true, alcance: true, engajamento: true, publicadoEm: true },
     })
     return NextResponse.json(posts)
   }
@@ -255,6 +255,19 @@ export async function POST(req: NextRequest) {
     else if (plat === 'instagram') result = await syncInstagram()
     else result = await syncAll()
     return NextResponse.json(result)
+  }
+
+  // O PolitiMonitor "assiste" o vídeo/reel ou "vê" o carrossel e avalia o conteúdo (gancho/ritmo/CTA).
+  if (acao === 'analisar_midia') {
+    const mediaId = String(body.mediaId || body.postId || '').trim()
+    if (!mediaId) return NextResponse.json({ ok: false, erro: 'mediaId obrigatório' }, { status: 400 })
+    const { getInstagramMedia, analisarMidiaPost } = await import('@/lib/social/midia')
+    const media = await getInstagramMedia(mediaId)
+    if (!media) return NextResponse.json({ ok: false, erro: 'mídia não encontrada (verifique o token do Instagram)' })
+    const analise = await analisarMidiaPost(media)
+    // devolve também o link do post que gerou o insight (permalink do IG, ou o url do post no DB)
+    const post = await prisma.bondPost.findFirst({ where: { postId: mediaId }, select: { url: true } })
+    return NextResponse.json({ ...analise, permalink: media.permalink || post?.url || null })
   }
 
   if (acao === 'chat') {
