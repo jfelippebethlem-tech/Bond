@@ -104,6 +104,13 @@ mensagens do dono NÃO poluem a caixa. **Captura de credenciais/MFA pelo Telegra
 do `state.db` do Yoda — ver o fluxo no JFN (`mfa_telegram`). ⚠️ 1 poller só por bot (2 = conflito 409).
 
 ## 7. CHANGELOG
+- **06-18 (captura HUMANA de curtidores + fixes da auditoria):** método novo = só **mouse+screenshot**, depura FORA do IG
+  (Gemini visão na VM); 3 motores → 2 (**nodriver** padrão-ouro, **cdp** cru; Playwright REMOVIDO por deixar rastro). Branches
+  `teste/nodriver`,`teste/cdp`,`teste/captura-humana-base` no GitHub Bond. Runbook `docs/CAPTURA-HUMANA-RUNBOOK.md` + guia de
+  zero `docs/GUIA-DO-ZERO.md`. **Bug do site resolvido:** importador lia caminho raso → `acharMaisRecente()` varre o
+  aninhado (likers.json E likers-status.json). 8 fixes da auditoria nas 3 branches (data no parser, JSON robusto, coords
+  nodriver, seletor `:has`, status). Tempos REALMENTE aleatórios 15-200s/post. Pesquisa: Meta bane "script injetando código"
+  + detecta Playwright por fingerprint → por isso mouse+screenshot. **Conta-teste fake antes da sua. Captura só no desktop, NUNCA na VM.**
 - **06-15 (⭐ redes conectadas + Interações + Inteligência de Conteúdo):** Facebook (Página 58,5k) + Instagram (@dep…,
   24,2k) **conectados** (Page token derivado do User token via `me/accounts`) — lendo posts/comentários reais (244
   pessoas, 909 comentários). Nova tela **`/interacoes`**: quem curtiu/comentou/compartilhou, **filtro por data** com
