@@ -89,13 +89,19 @@ async function capturarPost(driver, opts, code, idx, total) {
   // às vezes a pessoa rola o próprio post um tiquinho antes
   if (chance(0.5)) { await rolarComRoda(driver, { x: 0, y: 0, ...driver.viewport() }, randInt(1, 2)); await microPausa() }
 
-  // abrir os curtidores (clique no link "curtidas")
+  // abrir os curtidores: 1º tenta o CLIQUE no link de curtidas (mais humano).
+  let dialog = null
   let alvo = await driver.boxOf(SEL_CURTIDAS)
   if (!alvo && driver.boxOfText) alvo = await driver.boxOfText(/curtida|curtir|like|gostei/i)
-  if (!alvo) { escreverManifest(dir, manifest); return { code, modalAbriu: false, shots: 1 } }
-
-  await clicarHumano(driver, alvo)
-  const dialog = await esperarDialog(driver)
+  if (alvo) { await clicarHumano(driver, alvo); dialog = await esperarDialog(driver) }
+  // FALLBACK robusto (confirmado pela referência do projeto): a URL /p/<code>/liked_by/
+  // abre o MESMO modal, sem depender de seletor de botão (que o IG muda). Uma navegação
+  // é o que o próprio clique faz — não é injeção de código.
+  if (!dialog) {
+    manifest.viaLikedByUrl = true
+    await driver.goto(`https://www.instagram.com/p/${code}/liked_by/`)
+    dialog = await esperarDialog(driver)
+  }
   if (!dialog) { escreverManifest(dir, manifest); return { code, modalAbriu: false, shots: 1 } }
   manifest.modalAbriu = true
   await microPausa(700, 1800)
