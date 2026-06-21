@@ -10,13 +10,30 @@ function forcarFree(model: string): string {
   if (m === 'openrouter/free' || m.endsWith(':free')) return m
   return m.split(':')[0] + ':free'
 }
-const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'nousresearch/hermes-3-llama-3.1-405b:free')
+const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free')
 
 async function callAI(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   maxTokens = 1024
 ): Promise<string> {
-  // Tenta OpenRouter (Hermes 3 405B gratuito)
+  // Cerebras (rápido, com saldo) — primário (mesma IA do topo do Yoda). JFN 2026-06-21.
+  if (process.env.CEREBRAS_API_KEY) {
+    try {
+      const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: 'gpt-oss-120b', messages, max_tokens: maxTokens }),
+      })
+      const data = await res.json()
+      const text = data?.choices?.[0]?.message?.content
+      if (text) return text
+    } catch {}
+  }
+
+  // Tenta OpenRouter (APENAS :free — regra do dono)
   if (process.env.OPENROUTER_API_KEY) {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
