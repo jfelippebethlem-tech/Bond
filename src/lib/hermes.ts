@@ -33,7 +33,26 @@ async function callAI(
     } catch {}
   }
 
-  // Tenta OpenRouter (APENAS :free — regra do dono)
+  // Gemini (confiável) — 2º, antes do OpenRouter flaky. JFN 2026-06-21.
+  if (process.env.GEMINI_API_KEY) {
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.5-flash',
+      systemInstruction: messages.find((m) => m.role === 'system')?.content,
+      generationConfig: { maxOutputTokens: maxTokens },
+    })
+    const userMessages = messages.filter((m) => m.role !== 'system')
+    const last = userMessages.at(-1)?.content ?? ''
+    const history = userMessages.slice(0, -1).map((m) => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: [{ text: m.content }],
+    }))
+    const chat = model.startChat({ history })
+    const result = await chat.sendMessage(last)
+    return result.response.text()
+  }
+
+  // OpenRouter (APENAS :free — regra do dono) — fallback final. JFN 2026-06-21.
   if (process.env.OPENROUTER_API_KEY) {
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
@@ -52,25 +71,6 @@ async function callAI(
     const data = await res.json()
     const text = data?.choices?.[0]?.message?.content
     if (text) return text
-  }
-
-  // Fallback: Gemini 2.0 Flash
-  if (process.env.GEMINI_API_KEY) {
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: messages.find((m) => m.role === 'system')?.content,
-      generationConfig: { maxOutputTokens: maxTokens },
-    })
-    const userMessages = messages.filter((m) => m.role !== 'system')
-    const last = userMessages.at(-1)?.content ?? ''
-    const history = userMessages.slice(0, -1).map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: [{ text: m.content }],
-    }))
-    const chat = model.startChat({ history })
-    const result = await chat.sendMessage(last)
-    return result.response.text()
   }
 
   return 'Configure OPENROUTER_API_KEY ou GEMINI_API_KEY no .env para ativar o Hermes.'
