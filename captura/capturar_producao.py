@@ -106,7 +106,9 @@ def selecionar(posts, led, agora, ciclo_idx):
         velhos = backlog_pendentes(20); random.shuffle(velhos)
         return recentes + velhos[:3]                          # + 3 antigos aleatórios
     if ciclo_idx == 1 and seg_qui:
-        return mais_antigo_do_ledger(top10)[5:10]            # Seg/Qui: resto dos top-10
+        # os 5 menos-recentemente-capturados; como o ciclo 0 já marcou os seus no ledger,
+        # estes são automaticamente os OUTROS 5 do top-10 (antes era [5:10] = re-pegava os mesmos).
+        return mais_antigo_do_ledger(top10)[:5]              # Seg/Qui: resto dos top-10
     return backlog_pendentes(5)                               # ciclos seguintes: backlog antigo
 
 # ---------- captura de 1 post (DOM-union exato) ----------
