@@ -39,9 +39,9 @@ while True:
         log(f"comando recebido (origem={c.get('origem')}, ts={ts0}) — iniciando ciclo")
         env = dict(os.environ)
         env["IG_TARGET_USER"] = env.get("IG_TARGET_USER", "depjorgefelippeneto")
-        env["IG_PROFILE_DIR"] = env.get("IG_PROFILE_DIR", r"C:\jfn\ig-profile")
+        env["IG_PROFILE_DIR"] = env.get("IG_PROFILE_DIR", r"C:\jfn\ig-profile-dono")  # conta DONA (método completo)
         env["IG_UM_CICLO"] = "1"
-        env.setdefault("IG_TESTE", str(c.get("teste", "1")))
+        env.setdefault("IG_TESTE", str(c.get("teste", "0")))   # produção por padrão
         env["PYTHONUTF8"] = "1"
         if c.get("codes"): env["IG_CODES"] = c["codes"]
         t0 = time.time()

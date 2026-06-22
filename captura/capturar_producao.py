@@ -11,7 +11,9 @@
 #     no OUT (Syncthing) + ledger. VM só ingere; captura é exclusiva daqui.
 # Uso teste (conta itsbernardof, isolado, até amanhã 08:00):
 #   IG_TESTE=1 IG_ATE="2026-06-23 08:00" python captura/capturar_producao.py
-import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib
+import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib, base64
+try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # console Windows é cp1252
+except Exception: pass
 
 def garantir_somente_desktop():
     if os.environ.get("IG_CAPTURE_DISABLED") == "1" or os.name != "nt":
@@ -28,7 +30,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def env(k, d=None): return os.environ.get(k, d)
 
 TARGET   = env("IG_TARGET_USER") or env("IG_PERFIL") or "depjorgefelippeneto"
-PROFILE  = env("IG_PROFILE_DIR", r"C:\jfn\ig-profile")
+PROFILE  = env("IG_PROFILE_DIR", r"C:\jfn\ig-profile-dono")   # conta DONA (vê TODOS; sem teto ~100)
+OWNER_ID = env("IG_OWNER_ID", "1985223190")                   # @depjorgefelippeneto
 TESTE    = env("IG_TESTE") == "1"
 CODES    = [c.strip() for c in (env("IG_CODES") or "").split(",") if c.strip()]  # posts específicos
 UM_CICLO = env("IG_UM_CICLO") == "1" or bool(CODES)                              # 1 ciclo e sai (p/ cron/Hermes)
@@ -111,53 +114,140 @@ def selecionar(posts, led, agora, ciclo_idx):
         return mais_antigo_do_ledger(top10)[:5]              # Seg/Qui: resto dos top-10
     return backlog_pendentes(5)                               # ciclos seguintes: backlog antigo
 
-# ---------- captura de 1 post (DOM-union exato) ----------
-SKIP = {"", "explore", "reels", "direct", "p", "accounts", "emails", "challenge"}
+# ---------- captura de 1 post — MÉTODO DONO (página /liked_by/, lista COMPLETA) ----------
+# Logado como o dono, /p/<code>/liked_by/ é uma PÁGINA que lista TODOS (sem teto ~100 de
+# não-dono). Rola humano (gesto CDP) + une usernames da lista (DOM por scroll) + escuta
+# GraphQL passiva (rede de segurança p/ posts grandes). 100% humano: nada de fetch in-page.
+SKIP = {"", "explore", "reels", "reel", "direct", "p", "accounts", "emails", "challenge",
+        "stories", "about", "legal", "privacy", "tv", "api", TARGET}
+
+_api = {}; _pend = {}; _escutando = False
+def _coletar(j):
+    pilha = [j]
+    while pilha:
+        n = pilha.pop()
+        if isinstance(n, dict):
+            un = n.get("username")
+            if isinstance(un, str) and un and un not in SKIP: _api[un] = True
+            for v in n.values():
+                if isinstance(v, (dict, list)): pilha.append(v)
+        elif isinstance(n, list):
+            pilha.extend(x for x in n if isinstance(x, (dict, list)))
+def _interessa(u): return bool(re.search(r"graphql/query|/likers\b|liked_by", u or "", re.I))
+async def _on_response(evt, conn=None):
+    if not _escutando: return
+    try:
+        if _interessa(evt.response.url): _pend[evt.request_id] = 1
+    except Exception: pass
+async def _on_finished(evt, conn=None):
+    rid = getattr(evt, "request_id", None)
+    if rid is None or rid not in _pend or conn is None: return
+    _pend.pop(rid, None)
+    try:
+        body, b64 = await conn.send(uc.cdp.network.get_response_body(rid))
+        if b64: body = base64.b64decode(body).decode("utf-8", "replace")
+        _coletar(json.loads(body))
+    except Exception: pass
+
 async def colher(tab):
     us = set()
     try:
-        for e in (await tab.select_all('div[role="dialog"] a[href^="/"]') or []):
-            h = (e.attrs.get("href") or "").strip("/")
-            if "/" in h: continue
-            if h and h not in SKIP: us.add(h)
+        for e in (await tab.select_all('a[href^="/"]') or []):
+            m = re.match(r'^/([A-Za-z0-9._]+)/$', e.attrs.get("href") or "")
+            if m and m.group(1) not in SKIP: us.add(m.group(1))
     except Exception: pass
     return us
 
-async def capturar_post(tab, code):
-    await tab.get(f"https://www.instagram.com/p/{code}/"); await asyncio.sleep(humano())
-    link = await tab.select('a[href*="liked_by"]', timeout=8)
-    if not link:
-        return None, "sem_link_liked_by"
-    try: await link.click()
-    except Exception: pass
-    await asyncio.sleep(humano())
-    # centro do viewport p/ o gesto
-    p1 = os.path.join(OUT, "_vp.png"); await tab.save_screenshot(p1, format="png")
+async def estado_scroll(tab):
+    # leitura PASSIVA (não rola): altura/posição do scroll + spinner + nº de links de usuário.
+    # retorna lista (arrays viram valores planos no nodriver) [sh, st, ch, spinner, n]
     try:
-        with open(p1, "rb") as f: hdr = f.read(26)
-        vw, vh = struct.unpack(">II", hdr[16:24])
-    except Exception: vw, vh = 1280, 800
-    cx, cy = vw/2.0, vh*0.55
-    async def gesto(dist):
-        try: await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=float(-dist), speed=800, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
-        except Exception:
-            try: await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=float(-dist)))
-            except Exception: pass
-    todos = set(await colher(tab)); estavel = 0; passos = 0
-    while passos < 400:
-        passos += 1
-        antes = len(todos)
-        await gesto(220)
-        await asyncio.sleep(humano())                # CADA scroll: 1–12s humano
-        todos |= await colher(tab)
-        estavel = estavel + 1 if len(todos) == antes else 0
-        if estavel >= 4: break
-        if pausado(): return sorted(todos), "pausado"
-    try:                                              # fecha o modal (ESC)
-        await tab.send(uc.cdp.input_.dispatch_key_event(type_="keyDown", key="Escape", windows_virtual_key_code=27))
-        await tab.send(uc.cdp.input_.dispatch_key_event(type_="keyUp", key="Escape", windows_virtual_key_code=27))
+        r = await tab.evaluate("""(()=>{
+            const se=document.scrollingElement||document.documentElement;
+            const sp=document.querySelector('[role="progressbar"], [data-visualcompletion="loading-state"], svg[aria-label*="arregando"], svg[aria-label*="oading"]');
+            const re=/^\\/[A-Za-z0-9._]+\\/$/; let n=0;
+            for(const a of document.querySelectorAll('a[href^="/"]')) if(re.test(a.getAttribute('href')||'')) n++;
+            return [se.scrollHeight, se.scrollTop, se.clientHeight, sp?1:0, n];
+        })()""")
+        return [int(x) for x in r]
+    except Exception:
+        return [0, 0, 0, 0, 0]
+
+def passo_sleep():
+    # ritmo humano entre scrolls; tunável p/ testes (default produção 1–12s)
+    return rand(float(env("IG_SCROLL_MIN", "1")), float(env("IG_SCROLL_MAX", "12")))
+
+async def ds_user_id(tab):
+    try:
+        cks = await tab.send(uc.cdp.network.get_cookies(urls=["https://www.instagram.com/"]))
+        for c in (cks or []):
+            if getattr(c, "name", "") == "ds_user_id": return getattr(c, "value", "") or ""
     except Exception: pass
-    return sorted(todos), "ok"
+    return ""
+
+async def esperar_dono(tab):
+    # exige a conta ATIVA = dono. Login persiste no perfil (normalmente já está). Sem isso,
+    # capturaria como não-dono (teto ~100). Espera curta p/ rodadas não-assistidas.
+    uid = await ds_user_id(tab)
+    if uid == OWNER_ID:
+        log(f"[OK] logado como o dono (id {uid})."); return True
+    log(f"AGUARDANDO: conta ATIVA precisa ser @{TARGET} (id {OWNER_ID}).")
+    ultimo = None
+    for i in range(60):   # ~5 min
+        uid = await ds_user_id(tab)
+        if uid == OWNER_ID: break
+        if uid and uid != ultimo:
+            log(f"  conta ativa={uid} NÃO é o dono — troque p/ @{TARGET}."); ultimo = uid
+        await asyncio.sleep(5)
+    if uid != OWNER_ID:
+        log("ABORTA: conta dona não ficou ativa."); return False
+    log("[OK] dono ativo — 30s p/ diálogos de login (manter logado/notificações).")
+    await asyncio.sleep(30)
+    return True
+
+async def capturar_post(tab, code):
+    globals()["_escutando"] = True; _api.clear()
+    try:
+        await tab.get(f"https://www.instagram.com/p/{code}/liked_by/"); await asyncio.sleep(humano())
+        vp = await tab.evaluate("[innerWidth, innerHeight]")
+        try: iw, ih = int(vp[0]), int(vp[1])
+        except Exception: iw, ih = 1280, 800
+        cx, cy = iw/2.0, ih*0.5
+        todos = set(await colher(tab)) | set(_api)
+        prev_n = len(todos); prev_sh = -1
+        fim_firme = 0      # atBottom + altura estável + sem spinner + nada novo
+        sem_novo = 0       # fallback: nenhum nome novo (caso o gesto trave antes do fundo)
+        passos = 0; motivo = "max"
+        while passos < 800:
+            passos += 1
+            try:
+                await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=-380.0, speed=800, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
+            except Exception: pass
+            await asyncio.sleep(passo_sleep())           # ritmo humano (1–12s prod)
+            todos |= await colher(tab); todos |= set(_api)
+            sh, st, ch, spin, _n = await estado_scroll(tab)
+            tot = len(todos)
+            at_bottom = (st + ch) >= (sh - 12) if sh else False
+            nada_novo = (tot == prev_n)
+            altura_estavel = (sh == prev_sh)
+            # FIM FIRME (determinístico): no fundo, altura parada, sem spinner, sem nomes novos
+            if at_bottom and altura_estavel and not spin and nada_novo:
+                fim_firme += 1
+            else:
+                fim_firme = 0
+            sem_novo = sem_novo + 1 if nada_novo else 0
+            prev_n = tot; prev_sh = sh
+            if (passos % 5 == 0) or fim_firme:
+                log(f"      scroll p{passos}: n={tot} sh={sh} st+ch={st+ch} fundo={at_bottom} spin={bool(spin)} firme={fim_firme}")
+            if fim_firme >= 3 and tot > 0:
+                motivo = "fim_firme(no-fundo)"; break
+            if sem_novo >= 12 and tot > 0:               # fallback (gesto travou antes do fundo)
+                motivo = "sem_novo_12(fallback)"; break
+            if pausado(): return sorted(todos), "pausado"
+        log(f"      -> fim do scroll: {len(todos)} curtidores | motivo={motivo} | passos={passos}")
+        return sorted(todos), "ok"
+    finally:
+        globals()["_escutando"] = False
 
 # ---------- escrita dos 3 arquivos do contrato ----------
 def reescrever_contrato(posts_idx):
@@ -208,7 +298,12 @@ async def rodar():
             browser = await uc.start(user_data_dir=PROFILE, headless=False)
             try:
                 tab = await browser.get("https://www.instagram.com/"); await asyncio.sleep(humano())
-                for post in sel:
+                await tab.send(uc.cdp.network.enable())
+                tab.add_handler(uc.cdp.network.ResponseReceived, _on_response)
+                tab.add_handler(uc.cdp.network.LoadingFinished, _on_finished)
+                dono_ok = await esperar_dono(tab)
+                if not dono_ok: log("ciclo abortado: conta dona não ativa (sem captura p/ não regredir ao teto ~100).")
+                for post in (sel if dono_ok else []):
                     if ATE and now() >= ATE: break
                     if pausado(): log("⏸️ pausa detectada no meio do ciclo."); break
                     code = post["code"]; apilike = post.get("like_count")

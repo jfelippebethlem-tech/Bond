@@ -53,3 +53,10 @@ captura/.env
 captura/shots
 parse/__pycache__/
 captura/__pycache__/
+
+# scratch de diagnóstico/teste da captura (logs, pngs, jsons, _test_*/_diag_*)
+captura/_*
+# ambientes/sincronização locais
+.venv/
+.stfolder/
+.stversions/
