@@ -161,6 +161,12 @@ async function descobrirPosts(driver, opts) {
 
 // ---- orquestração geral ----
 export async function rodarCaptura(driver, opts) {
+  // GUARD (defesa em profundidade): captura de likers é EXCLUSIVA do desktop residencial
+  // (anti-ban). Mesmo se chamada direto (sem passar pelo entrypoint guardado), aborta na VM.
+  if (process.env.IG_CAPTURE_DISABLED === '1' || process.platform !== 'win32') {
+    const motivo = process.env.IG_CAPTURE_DISABLED === '1' ? 'IG_CAPTURE_DISABLED=1' : `SO '${process.platform}' não é Windows (provável VM/servidor)`
+    throw new Error(`captura de likers é EXCLUSIVA do desktop residencial (anti-ban). Esta máquina NÃO captura. Motivo: ${motivo}`)
+  }
   const ledger = carregarLedger(opts.ledgerFile)
   await driver.goto('https://www.instagram.com/')
   // LOGIN: se a tela de login aparecer, espera você logar na janela (até ~5 min).

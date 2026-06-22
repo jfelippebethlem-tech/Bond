@@ -13,6 +13,15 @@ import { fileURLToPath } from 'url'
 import { carregarEnv, pausado, escreverStatus, rand, sleep } from './lib/util.mjs'
 import { rodarCaptura } from './lib/flow.mjs'
 
+// GUARD: captura de likers é EXCLUSIVA do desktop residencial (anti-ban). A VM (Linux,
+// IP de datacenter) NÃO captura — só ingere o que o Syncthing traz. Guard por SO porque
+// .env/arquivos sincronizam pra VM e não são confiáveis. Kill-switch: IG_CAPTURE_DISABLED=1.
+if (process.env.IG_CAPTURE_DISABLED === '1' || os.platform() !== 'win32') {
+  const motivo = process.env.IG_CAPTURE_DISABLED === '1' ? 'IG_CAPTURE_DISABLED=1' : `SO '${os.platform()}' não é Windows (provável VM/servidor)`
+  console.error(`⛔ ABORTADO: captura de likers é EXCLUSIVA do desktop residencial (proteção anti-ban). Esta máquina NÃO captura — só o desktop. Motivo: ${motivo}`)
+  process.exit(9)
+}
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 carregarEnv(path.join(__dirname, '.env'))
 carregarEnv(path.join(__dirname, '..', '.env'))

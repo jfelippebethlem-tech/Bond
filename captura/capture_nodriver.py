@@ -9,12 +9,30 @@
 #
 # Pré-req no desktop:  pip install nodriver   (+ Chrome instalado)
 # Uso (Hermes):        IG_TARGET_USER=<perfil> IG_ENGINE=nodriver python capture/capture_nodriver.py
-import os, sys, json, time, random, asyncio, datetime, re
+import os, sys, json, time, random, asyncio, datetime, re, hashlib, struct
 
 try:
     import nodriver as uc
 except Exception:
     print("⛔ nodriver não instalado. No desktop:  pip install nodriver", file=sys.stderr); sys.exit(2)
+# Scroll do modal: CDP synthesizeScrollGesture (background, sem mouse real, sem foco,
+# sem JS). pyautogui foi descartado por sequestrar o mouse do dono.
+
+def garantir_somente_desktop():
+    # Captura de likers é EXCLUSIVA do desktop residencial (IP residencial, anti-ban).
+    # A VM (Linux, IP de datacenter) NUNCA captura — só ingere o que o Syncthing traz.
+    # Guard por SO (os.name) porque .env/arquivos SINCRONIZAM pra VM e não são confiáveis;
+    # o SO não sincroniza. Kill-switch extra: IG_CAPTURE_DISABLED=1.
+    motivo = None
+    if os.environ.get("IG_CAPTURE_DISABLED") == "1":
+        motivo = "IG_CAPTURE_DISABLED=1"
+    elif os.name != "nt":
+        motivo = f"SO '{os.name}' não é Windows (provável VM/servidor)"
+    if motivo:
+        print(f"⛔ ABORTADO: captura de likers é EXCLUSIVA do desktop residencial "
+              f"(proteção anti-ban). Esta máquina NÃO captura — só o desktop. Motivo: {motivo}",
+              file=sys.stderr)
+        sys.exit(9)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,6 +55,30 @@ MIN_S    = max(5, int(env("IG_TEMPO_MIN", "15")))
 MAX_S    = max(20, int(env("IG_TEMPO_MAX", "200")))
 MAX_SHOTS= max(3, int(env("IG_MAX_SHOTS", "30")))
 MAX_FALHAS = max(2, int(env("IG_MAX_FALHAS", "3")))
+FORCE    = (env("IG_FORCE", "false") or "").strip().lower() in ("1", "true", "yes", "sim")
+DEBUG    = (env("IG_DEBUG", "false") or "").strip().lower() in ("1", "true", "yes", "sim")
+SCROLL   = (env("IG_SCROLL", "teclado") or "teclado").strip().lower()  # teclado | scrollview
+POOL     = NUM_POSTS if FORCE else NUM_POSTS * 4  # com dedup, junta mais codes p/ sobrar NUM_POSTS novos
+LEDGER   = os.path.join(OUT, "captura-ledger.jsonl")  # referencia p/ dedup + sweeps
+
+def ledger_codes():
+    # codes ja capturados COM SUCESSO (modal abriu) — pra nao recapturar nos sweeps
+    feitos = set()
+    try:
+        for ln in open(LEDGER, encoding="utf-8"):
+            try:
+                j = json.loads(ln)
+                if j.get("modalAbriu"): feitos.add(j.get("code"))
+            except Exception: pass
+    except Exception: pass
+    return feitos
+
+def registrar_ledger(rec):
+    try:
+        os.makedirs(OUT, exist_ok=True)
+        with open(LEDGER, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    except Exception: pass
 
 def rand(a, b): return a + random.random() * (b - a)
 def randint(a, b): return random.randint(a, b)
@@ -62,19 +104,33 @@ def pausado():
     return None
 
 async def wheel(tab, cx, cy, dy):
-    # roda de verdade no ponto (evento trusted via CDP) — rola o que está sob o cursor
+    # roda de verdade no ponto (evento trusted via CDP) — rola o que está sob o cursor.
+    # CRÍTICO: mover o cursor (mouseMoved) ANTES da roda; sem isso o Chrome não sabe
+    # sobre qual elemento aplicar o scroll e a lista do modal NÃO rola.
     try:
+        await tab.send(uc.cdp.input_.dispatch_mouse_event(
+            type_="mouseMoved", x=float(cx), y=float(cy)))
         await tab.send(uc.cdp.input_.dispatch_mouse_event(
             type_="mouseWheel", x=float(cx), y=float(cy), delta_x=0.0, delta_y=float(dy)))
     except Exception:
         try: await tab.scroll_down(max(1, int(dy / 8)))
         except Exception: pass
 
+async def tecla(tab, key, vk):
+    # tecla REAL via CDP (Input.dispatchKeyEvent) — input de usuario, sem JS.
+    try:
+        await tab.send(uc.cdp.input_.dispatch_key_event(type_="keyDown", key=key, code=key,
+            windows_virtual_key_code=vk, native_virtual_key_code=vk))
+        await sleep(rand(0.03, 0.13))
+        await tab.send(uc.cdp.input_.dispatch_key_event(type_="keyUp", key=key, code=key,
+            windows_virtual_key_code=vk, native_virtual_key_code=vk))
+    except Exception: pass
+
 async def rolar(tab, cx, cy, passos):
     for _ in range(passos):
-        await wheel(tab, cx, cy, rand(90, 320)); await sleep(rand(0.18, 0.72))
+        await wheel(tab, cx, cy, rand(200, 450)); await sleep(rand(0.18, 0.72))
         if chance(0.18): await sleep(rand(0.9, 2.6))
-        if chance(0.08): await wheel(tab, cx, cy, -rand(40, 140));
+        if chance(0.08): await wheel(tab, cx, cy, -rand(60, 180));
 
 async def centro_do(tab, selector):
     try:
@@ -108,14 +164,14 @@ async def grid_codes(tab):
 async def descobrir_posts(tab):
     await tab.get(f"https://www.instagram.com/{TARGET}/"); await sleep(rand(2.5, 6.5))
     codes, vistos, estavel = [], set(), 0
-    for _ in range(50):
-        if len(codes) >= NUM_POSTS or estavel >= 5: break
+    for _ in range(80):
+        if len(codes) >= POOL or estavel >= 5: break
         antes = len(vistos)
         for c in await grid_codes(tab):
             if c not in vistos: vistos.add(c); codes.append(c)
         estavel = estavel + 1 if len(vistos) == antes else 0
         await rolar(tab, 683, 400, randint(2, 4)); await sleep(rand(0.5, 1.4))
-    return codes[:NUM_POSTS]
+    return codes[:POOL]
 
 async def capturar_post(tab, code):
     url = f"https://www.instagram.com/p/{code}/"
@@ -151,20 +207,52 @@ async def capturar_post(tab, code):
         dlg = await esperar_dialog()
     if not dlg:
         json.dump(man, open(os.path.join(d, "manifest.json"), "w"), indent=2, ensure_ascii=False)
+        registrar_ledger({"code": code, "url": url, "target": TARGET, "capturadoEm": man["capturadoEm"], "modalAbriu": False, "shots": len(man["likeShots"]), "via": "liked_by_url" if man.get("viaLikedByUrl") else "clique"})
         return {"code": code, "modalAbriu": False}
-    man["modalAbriu"] = True; await sleep(rand(0.7, 1.8))
+    man["modalAbriu"] = True; man["scroll"] = "cdp-scroll-gesture"; await sleep(rand(0.7, 1.8))
 
-    fim = time.time() + tempo_post_ms() / 1000.0; n = 0
-    while time.time() < fim and n < MAX_SHOTS:
-        n += 1; shot = f"likes_{n:04d}.png"
-        await tab.save_screenshot(os.path.join(d, shot), format="png"); man["likeShots"].append(shot)
-        dc = await centro_do(tab, 'div[role="dialog"]') or dlg
-        await rolar(tab, dc[0], dc[1], randint(1, 2)); await sleep(rand(0.4, 1.1))
-    while time.time() < fim:
-        await sleep(rand(1.5, 4.0))
-        if chance(0.3):
-            dc = await centro_do(tab, 'div[role="dialog"]') or dlg
-            await rolar(tab, dc[0], dc[1], 1)
+    # SCROLL via CDP synthesizeScrollGesture (gesto de roda hit-tested, source=mouse) no
+    # CENTRO REAL do viewport. Roda em BACKGROUND: NAO toca no mouse real, NAO precisa de
+    # foco -> o dono trabalha normal. Sem JS injetado, sem scrollTop. O bug antigo era so
+    # COORDENADA (o get_position do modal dava caixa bogus 600x520; o certo e o centro do
+    # viewport, do tamanho do 1o screenshot, DPR=1). Passo pequeno -> overlap (ninguem
+    # pulado). Sem mouse real -> sem hover card. FIM por SCREENSHOT (tela parou de mudar).
+    shot1 = "likes_0001.png"; p1 = os.path.join(d, shot1)
+    await tab.save_screenshot(p1, format="png"); man["likeShots"].append(shot1)
+    try:
+        with open(p1, "rb") as f: hdr = f.read(26)
+        vw, vh = struct.unpack(">II", hdr[16:24])
+    except Exception: vw, vh = 1280, 800
+    cx = vw / 2.0; cy = vh * 0.55
+    if DEBUG: print(f"   {code} viewport {vw}x{vh} gesto=({cx:.0f},{cy:.0f})", flush=True)
+    async def gesto(dist):
+        try:
+            await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy),
+                x_distance=0.0, y_distance=float(-dist), speed=800, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
+        except Exception:
+            try: await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=float(-dist)))
+            except Exception: pass
+    try: last_hash = hashlib.md5(open(p1, "rb").read()).hexdigest()
+    except Exception: last_hash = None
+    parado = 0; n = 1
+    while n < MAX_SHOTS:
+        n += 1
+        await gesto(rand(170, 300))                          # gesto PEQUENO -> overlap (ninguem pulado)
+        await sleep(rand(1.0, 5.0))                          # pausa humana aleatoria (1-5s)
+        shot = f"likes_{n:04d}.png"; path = os.path.join(d, shot)
+        await tab.save_screenshot(path, format="png"); man["likeShots"].append(shot)
+        try: hsh = hashlib.md5(open(path, "rb").read()).hexdigest()
+        except Exception: hsh = str(n)
+        if DEBUG:
+            cnt = -1
+            try: cnt = len(await tab.select_all('div[role="dialog"] a[href^="/"]') or [])
+            except Exception: pass
+            print(f"   {code} shot {n}: {cnt} no DOM | hash {hsh[:6]}", flush=True)
+        parado = parado + 1 if (hsh == last_hash) else 0
+        last_hash = hsh
+        if parado >= 3:
+            if DEBUG: print(f"   {code}: fim no print {n} (tela estavel)", flush=True)
+            break
 
     await sleep(rand(0.4, 1.5))
     try: await tab.send(uc.cdp.input_.dispatch_key_event(type_="keyDown", key="Escape", windows_virtual_key_code=27)); \
@@ -172,6 +260,7 @@ async def capturar_post(tab, code):
     except Exception: pass
     man["shots"] = len(man["postShots"]) + len(man["likeShots"])
     json.dump(man, open(os.path.join(d, "manifest.json"), "w"), indent=2, ensure_ascii=False)
+    registrar_ledger({"code": code, "url": url, "target": TARGET, "capturadoEm": man["capturadoEm"], "modalAbriu": True, "shots": man["shots"], "via": "liked_by_url" if man.get("viaLikedByUrl") else "clique"})
     return {"code": code, "modalAbriu": True, "shots": man["shots"]}
 
 async def main():
@@ -191,8 +280,16 @@ async def main():
             if i == 0: print("🔑 NAO logado. Faca login na CONTA-TESTE na janela (usuario+senha+2FA). Aguardando ate 5 min...")
             await sleep(rand(8, 12))
         await rolar(tab, 683, 400, randint(2, 5)); await sleep(rand(0.8, 2.5))
-        fila = await descobrir_posts(tab)
-        if not fila: print("nada novo"); status(True, "nada_novo"); return
+        pool = await descobrir_posts(tab)
+        if not FORCE:
+            feitos = ledger_codes()
+            novos = [c for c in pool if c not in feitos]
+            print(f"   grade: {len(pool)} codes, {len(feitos)} ja no ledger -> {len(novos)} novos", flush=True)
+            fila = novos[:NUM_POSTS]
+        else:
+            fila = pool[:NUM_POSTS]
+        if not fila: print("nada novo (dedup pelo ledger)" if not FORCE else "nada novo"); status(True, "nada_novo"); return
+        print(f"   vou capturar {len(fila)} posts: {', '.join(fila)}", flush=True)
         falhas, desde, lote, res = 0, 0, randint(3, 7), []
         for i, code in enumerate(fila):
             try: r = await capturar_post(tab, code)
@@ -219,4 +316,5 @@ async def main():
         except Exception: pass
 
 if __name__ == "__main__":
+    garantir_somente_desktop()
     uc.loop().run_until_complete(main())
