@@ -7,8 +7,8 @@ import {
 } from 'lucide-react'
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
-type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
-type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number }
+type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeIGAcum: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
+type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; hasDate?: boolean }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const REDE = (p: string) => ({ instagram: 'bg-pink-100 text-pink-700', facebook: 'bg-blue-100 text-blue-700', twitter: 'bg-sky-100 text-sky-700' }[p] || 'bg-gray-100 text-gray-600')
@@ -101,6 +101,8 @@ export default function InteracoesPage() {
   function aplicarMes(mIdx: number) { const d = new Date(anoAtual, mIdx, 1); setDe(fmtISO(d)); setAte(fmtISO(new Date(anoAtual, mIdx + 1, 0))); setPresetAtivo(`mes-${mIdx}`) }
   function aplicarAno(ano: number) { setDe(`${ano}-01-01`); setAte(`${ano}-12-31`); setPresetAtivo(`ano-${ano}`) }
   function limparData() { setDe(''); setAte(''); setPresetAtivo('') }
+  function limparTudo() { setTipo(''); setPlat(''); setPessoa(''); setDe(''); setAte(''); setPresetAtivo(''); setModo('pessoa') }
+  const algumFiltroAtivo = !!(tipoInteracao || plataforma || pessoa || de || ate) || modo !== 'pessoa'
 
   async function sincronizar() {
     setSync(true)
@@ -148,7 +150,9 @@ export default function InteracoesPage() {
       {/* Cards de totais */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <Card icon={<Activity size={18} className="text-indigo-600" />} cor="bg-indigo-50" label="Total" valor={stats.total} />
-        <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas (nos posts)" valor={(stats.curtidasPostagens ?? 0) || stats.like} />
+        {(!pessoa && (!tipoInteracao || tipoInteracao === 'like')) && (
+          <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas recebidas (nos posts)" valor={(stats.curtidasPostagens ?? 0) || stats.like} />
+        )}
         <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={stats.comment} />
         {plataforma !== 'instagram' && <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />}
       </div>
@@ -198,6 +202,11 @@ export default function InteracoesPage() {
           <Search size={15} className="text-gray-400" />
           <input value={pessoa} onChange={(e) => setPessoa(e.target.value)} placeholder="Buscar pessoa…" className="border border-gray-300 rounded-lg px-3 py-2 text-sm flex-1" />
         </div>
+        {algumFiltroAtivo && (
+          <button onClick={limparTudo} title="Limpar todos os filtros (sem recarregar a página)" className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium bg-gray-200 text-gray-700 hover:bg-gray-300 whitespace-nowrap">
+            <RefreshCw size={14} /> Limpar filtros
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -213,7 +222,10 @@ export default function InteracoesPage() {
                 <tr key={p.pessoa} className="hover:bg-gray-50">
                   <td className={`px-3 py-2.5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-gray-400'}`}>{i + 1}º</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.pessoa}</td>
-                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.likeIG || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">
+                    {p.likeIGAcum || p.likeIG || '—'}
+                    {(de || ate) && p.likeIGAcum > 0 && <span title="Curtidas do Instagram são acumuladas (sem data por curtida) — não recortáveis por período" className="ml-1 text-[10px] text-gray-400 font-normal">acum.</span>}
+                  </td>
                   <td className="px-3 py-2.5 text-center text-blue-700 font-medium">{p.likeFB || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-blue-600 font-medium">{p.comment || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-green-600 font-medium">{p.share || '—'}</td>
