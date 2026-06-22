@@ -213,38 +213,52 @@ async def capturar_post(tab, code):
         try: iw, ih = int(vp[0]), int(vp[1])
         except Exception: iw, ih = 1280, 800
         cx, cy = iw/2.0, ih*0.5
-        todos = set(_api)
-        prev_n = len(todos); prev_sh = -1
-        fim_firme = 0      # atBottom + altura estável + sem spinner + nada novo
-        sem_novo = 0       # fallback: nenhum nome novo (caso o gesto trave antes do fundo)
-        passos = 0; motivo = "max"
-        while passos < 800:
+        # ESPERA a lista RENDERIZAR e a ALTURA ESTABILIZAR (reflow concluído) antes de medir.
+        # Senão sh=viewport e faltam=0 dispara o "fundo" cedo, gravando lixo (bug: total=1).
+        nomes0 = set(); sh0 = st0 = ch0 = 0; _psh = -1; _estab = 0
+        for _ in range(60):                              # até ~36s p/ a lista montar
+            nomes0, sh0, st0, ch0, _sp = await ler_pagina(tab)
+            if sh0 == _psh and (sh0 > ch0 + 80 or len(nomes0) > 0):
+                _estab += 1
+            else:
+                _estab = 0
+            _psh = sh0
+            if _estab >= 2: break                        # altura estável 2x = reflow concluído
+            await asyncio.sleep(0.6)
+        # PLANO POR POST (conta simples): passo = ~1 tela com sobreposição (15%) p/ NÃO pular
+        # linhas; nº de passos ≈ scrollHeight/passo; ETA = passos × ritmo (com folga).
+        todos = set(_api) | nomes0
+        step = max(200, int((ch0 or 700) * 0.85))        # sobreposição de 15% (cobre toda linha)
+        est = ((max(0, sh0 - ch0) + step - 1) // step) if step else 0
+        ritmo = (float(env("IG_SCROLL_MIN", "1")) + float(env("IG_SCROLL_MAX", "12"))) / 2 + 1.0  # s/passo (+overhead)
+        eta_min = round(est * ritmo / 60, 1)
+        log(f"      {code}: altura={sh0}px viewport={ch0}px passo={step}px ~{est} passos | ETA ~{eta_min}min (paciência: só fecha no fundo real)")
+        prev_st = -1; sem_avanco = 0; estavel_fundo = 0; passos = 0; motivo = "max"
+        sh, st, ch = sh0, st0, ch0
+        while passos < 2000:
             passos += 1
             try:
-                await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=-380.0, speed=800, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
+                await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=float(-step), speed=900, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
             except Exception: pass
-            await asyncio.sleep(passo_sleep())           # ritmo humano (1–12s prod)
+            await asyncio.sleep(passo_sleep())           # ritmo humano entre passos
             novos, sh, st, ch, spin = await ler_pagina(tab)
             todos |= novos; todos |= set(_api)
-            tot = len(todos)
-            at_bottom = (st + ch) >= (sh - 12) if sh else False
-            nada_novo = (tot == prev_n)
-            altura_estavel = (sh == prev_sh)
-            # FIM FIRME (determinístico): no fundo, altura parada, sem spinner, sem nomes novos
-            if at_bottom and altura_estavel and not spin and nada_novo:
-                fim_firme += 1
-            else:
-                fim_firme = 0
-            sem_novo = sem_novo + 1 if nada_novo else 0
-            prev_n = tot; prev_sh = sh
-            if (passos % 5 == 0) or fim_firme:
-                log(f"      scroll p{passos}: n={tot} sh={sh} st+ch={st+ch} fundo={at_bottom} spin={bool(spin)} firme={fim_firme}")
-            if fim_firme >= 3 and tot > 0:
-                motivo = "fim_firme(no-fundo)"; break
-            if sem_novo >= 12 and tot > 0:               # fallback (gesto travou antes do fundo)
-                motivo = "sem_novo_12(fallback)"; break
+            faltam = max(0, sh - (st + ch)); pct = int(100*(st+ch)/sh) if sh else 0
+            at_bottom = faltam <= 16
+            if (passos % 3 == 0) or at_bottom:
+                # domNow = nomes visíveis no DOM AGORA (revela virtualização: se «domNow« total, é virtual)
+                log(f"      scroll p{passos}/~{est}: total={len(todos)} domNow={len(novos)} pos={st+ch}/{sh} faltam={faltam}px ({pct}%)")
+            # FIM determinístico: no fundo de verdade, sem spinner, estável por 3 leituras
+            estavel_fundo = estavel_fundo + 1 if (at_bottom and not spin) else 0
+            sem_avanco = sem_avanco + 1 if st <= prev_st else 0
+            prev_st = st
+            if estavel_fundo >= 3 and len(todos) > 0:
+                motivo = "fundo_atingido"; break
+            if sem_avanco >= 12:                         # gesto não move o scroll (travou/topo)
+                motivo = "scroll_nao_avanca"; break
             if pausado(): return sorted(todos), "pausado"
-        log(f"      -> fim do scroll: {len(todos)} curtidores | motivo={motivo} | passos={passos}")
+        faltam = max(0, sh - (st + ch))
+        log(f"      -> fim: {len(todos)} curtidores | motivo={motivo} | faltam={faltam}px | passos={passos}")
         return sorted(todos), "ok"
     finally:
         globals()["_escutando"] = False
