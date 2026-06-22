@@ -183,16 +183,16 @@ export async function GET(req: NextRequest) {
       where: { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { publicadoEm: dateW } : {}) },
     })
     const curtidasPostagens = aggLikes._sum.likes ?? 0
-    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens }
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, hasDate }
 
     if (agrupar === 'pessoa') {
       // Exclui as contas do PRÓPRIO mandato (respostas do dono não são "interação de apoiador").
       const perfisDono = await prisma.bondPerfil.findMany({ select: { handle: true } })
       const donoHandles = new Set(perfisDono.map((p) => (p.handle || '').toLowerCase()).filter(Boolean))
-      const byP = new Map<string, { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
+      const byP = new Map<string, { pessoa: string; total: number; like: number; likeIG: number; likeIGAcum: number; likeFB: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
       for (const it of items) {
         if (donoHandles.has((it.pessoa || '').toLowerCase())) continue
-        const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, likeIG: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
+        const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, likeIG: 0, likeIGAcum: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
         e.total++
         if (it.tipo === 'like') { e.like++; if (it.plataforma === 'facebook') e.likeFB++; else if (it.plataforma === 'instagram') e.likeIG++ }
         else if (it.tipo === 'comment') e.comment++; else if (it.tipo === 'share') e.share++
@@ -202,9 +202,12 @@ export async function GET(req: NextRequest) {
       }
       // MERGE "quem curtiu" do IG (coletor do desktop -> BondFa.totalLikes). Sem isto a coluna ❤️
       // fica ZERADA, pois o BondInteracao não tem likes do IG (a Graph API não revela quem curtiu).
-      // Likes do IG são AGREGADOS (sem data por-evento) -> só entram na visão "tudo" (sem filtro de
-      // data); com filtro de data mantém-se honesto (não inventa quando a curtida aconteceu).
-      if (!hasDate && (!plataforma || plataforma === 'instagram')) {
+      // Likes do IG são AGREGADOS CUMULATIVOS (sem data por-curtida): entram SEMPRE em likeIGAcum
+      // (a coluna IG mostra esse acumulado com rótulo "acum."), mas só compõem o total/ranking DATADO
+      // quando NÃO há filtro de data — assim o número não SOME ao filtrar (honesto: não inventa quando
+      // a curtida aconteceu). Sob filtro de data, só ENRIQUECE quem já tem atividade datada no período
+      // (não cria milhares de linhas só de acumulado): o ranking puro de curtidores fica na visão sem data.
+      if (!plataforma || plataforma === 'instagram') {
         const curtidores = await prisma.bondFa.findMany({
           where: { plataforma: 'instagram', totalLikes: { gt: 0 } },
           select: { username: true, nome: true, totalLikes: true },
@@ -213,20 +216,25 @@ export async function GET(req: NextRequest) {
           const nome = String(f.nome || f.username || '').trim()
           if (!nome || donoHandles.has(nome.toLowerCase())) continue
           if (pessoa && !nome.toLowerCase().includes(pessoa)) continue
-          const e = byP.get(nome) || { pessoa: nome, total: 0, like: 0, likeIG: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(['instagram']), posts: new Set<string>(), ultima: new Date(0) }
-          e.like += f.totalLikes
-          e.likeIG += f.totalLikes
-          e.total += f.totalLikes
+          const existente = byP.get(nome)
+          if (hasDate && !existente) continue // com filtro de data: não cria linha só de acumulado
+          const e = existente || { pessoa: nome, total: 0, like: 0, likeIG: 0, likeIGAcum: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(['instagram']), posts: new Set<string>(), ultima: new Date(0) }
+          e.likeIGAcum += f.totalLikes
+          if (!hasDate) {
+            e.like += f.totalLikes
+            e.likeIG += f.totalLikes
+            e.total += f.totalLikes
+          }
           e.plataformas.add('instagram')
           byP.set(nome, e)
         }
       }
       const pessoas = Array.from(byP.values())
-        .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, likeIG: e.likeIG, likeFB: e.likeFB, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
-        .sort((a, b) => b.total - a.total)
+        .map((e) => ({ pessoa: e.pessoa, total: e.total, like: e.like, likeIG: e.likeIG, likeIGAcum: e.likeIGAcum, likeFB: e.likeFB, comment: e.comment, share: e.share, plataformas: Array.from(e.plataformas), nPosts: e.posts.size, posts: Array.from(e.posts), ultima: e.ultima }))
+        .sort((a, b) => b.total - a.total || b.likeIGAcum - a.likeIGAcum)
       if (formato === 'csv') {
-        const head = ['posicao', 'pessoa', 'total', 'comentarios', 'curtidas_ig', 'curtidas_fb', 'shares', 'plataformas', 'posts_distintos', 'ultima_interacao']
-        const linhas = pessoas.map((p, i) => [i + 1, p.pessoa, p.total, p.comment, p.likeIG, p.likeFB, p.share, p.plataformas.join(' '), p.nPosts, new Date(p.ultima).toISOString()])
+        const head = ['posicao', 'pessoa', 'total', 'comentarios', 'curtidas_ig', 'curtidas_ig_acum', 'curtidas_fb', 'shares', 'plataformas', 'posts_distintos', 'ultima_interacao']
+        const linhas = pessoas.map((p, i) => [i + 1, p.pessoa, p.total, p.comment, p.likeIG, p.likeIGAcum, p.likeFB, p.share, p.plataformas.join(' '), p.nPosts, new Date(p.ultima).toISOString()])
         return csvResp([head, ...linhas], `ranking-interacoes`)
       }
       return NextResponse.json({ stats, data: pessoas.slice(0, 2000) })
