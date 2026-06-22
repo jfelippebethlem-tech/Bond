@@ -7,8 +7,8 @@ import {
 } from 'lucide-react'
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
-type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeIGAcum: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
-type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; hasDate?: boolean }
+type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
+type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const REDE = (p: string) => ({ instagram: 'bg-pink-100 text-pink-700', facebook: 'bg-blue-100 text-blue-700', twitter: 'bg-sky-100 text-sky-700' }[p] || 'bg-gray-100 text-gray-600')
@@ -222,10 +222,7 @@ export default function InteracoesPage() {
                 <tr key={p.pessoa} className="hover:bg-gray-50">
                   <td className={`px-3 py-2.5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-gray-400'}`}>{i + 1}º</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.pessoa}</td>
-                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">
-                    {p.likeIGAcum || p.likeIG || '—'}
-                    {(de || ate) && p.likeIGAcum > 0 && <span title="Curtidas do Instagram são acumuladas (sem data por curtida) — não recortáveis por período" className="ml-1 text-[10px] text-gray-400 font-normal">acum.</span>}
-                  </td>
+                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.likeIG || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-blue-700 font-medium">{p.likeFB || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-blue-600 font-medium">{p.comment || '—'}</td>
                   <td className="px-3 py-2.5 text-center text-green-600 font-medium">{p.share || '—'}</td>
