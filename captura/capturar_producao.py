@@ -149,29 +149,29 @@ async def _on_finished(evt, conn=None):
         _coletar(json.loads(body))
     except Exception: pass
 
-async def colher(tab):
-    us = set()
-    try:
-        for e in (await tab.select_all('a[href^="/"]') or []):
-            m = re.match(r'^/([A-Za-z0-9._]+)/$', e.attrs.get("href") or "")
-            if m and m.group(1) not in SKIP: us.add(m.group(1))
-    except Exception: pass
-    return us
+def _coerce(r):
+    # nodriver às vezes embrulha o retorno do evaluate; primitivos (string) vêm direto.
+    if isinstance(r, str): return r
+    if isinstance(r, dict): return r.get("value", r)
+    return r
 
-async def estado_scroll(tab):
-    # leitura PASSIVA (não rola): altura/posição do scroll + spinner + nº de links de usuário.
-    # retorna lista (arrays viram valores planos no nodriver) [sh, st, ch, spinner, n]
+async def ler_pagina(tab):
+    # UMA chamada in-page: coleta os usernames da lista E o estado do scroll de uma vez.
+    # Evita select_all O(n) (1 chamada CDP por elemento) que TRAVA em posts grandes (1000+).
+    # retorna (set_usernames, scrollHeight, scrollTop, clientHeight, spinner)
     try:
-        r = await tab.evaluate("""(()=>{
+        s = await tab.evaluate(r"""(()=>{
             const se=document.scrollingElement||document.documentElement;
-            const sp=document.querySelector('[role="progressbar"], [data-visualcompletion="loading-state"], svg[aria-label*="arregando"], svg[aria-label*="oading"]');
-            const re=/^\\/[A-Za-z0-9._]+\\/$/; let n=0;
-            for(const a of document.querySelectorAll('a[href^="/"]')) if(re.test(a.getAttribute('href')||'')) n++;
-            return [se.scrollHeight, se.scrollTop, se.clientHeight, sp?1:0, n];
+            const sp=document.querySelector('[role="progressbar"], [data-visualcompletion="loading-state"]');
+            const re=/^\/[A-Za-z0-9._]+\/$/; const us=[];
+            for(const a of document.querySelectorAll('a[href^="/"]')){const h=a.getAttribute('href')||''; if(re.test(h)) us.push(h.slice(1,-1));}
+            return JSON.stringify({u:us, sh:se.scrollHeight, st:se.scrollTop, ch:se.clientHeight, sp:sp?1:0});
         })()""")
-        return [int(x) for x in r]
+        d = json.loads(_coerce(s))
+        users = {x for x in d.get("u", []) if x and x not in SKIP}
+        return users, int(d.get("sh", 0)), int(d.get("st", 0)), int(d.get("ch", 0)), int(d.get("sp", 0))
     except Exception:
-        return [0, 0, 0, 0, 0]
+        return set(), 0, 0, 0, 0
 
 def passo_sleep():
     # ritmo humano entre scrolls; tunável p/ testes (default produção 1–12s)
@@ -213,7 +213,7 @@ async def capturar_post(tab, code):
         try: iw, ih = int(vp[0]), int(vp[1])
         except Exception: iw, ih = 1280, 800
         cx, cy = iw/2.0, ih*0.5
-        todos = set(await colher(tab)) | set(_api)
+        todos = set(_api)
         prev_n = len(todos); prev_sh = -1
         fim_firme = 0      # atBottom + altura estável + sem spinner + nada novo
         sem_novo = 0       # fallback: nenhum nome novo (caso o gesto trave antes do fundo)
@@ -224,8 +224,8 @@ async def capturar_post(tab, code):
                 await tab.send(uc.cdp.input_.synthesize_scroll_gesture(x=float(cx), y=float(cy), x_distance=0.0, y_distance=-380.0, speed=800, gesture_source_type=uc.cdp.input_.GestureSourceType.MOUSE))
             except Exception: pass
             await asyncio.sleep(passo_sleep())           # ritmo humano (1–12s prod)
-            todos |= await colher(tab); todos |= set(_api)
-            sh, st, ch, spin, _n = await estado_scroll(tab)
+            novos, sh, st, ch, spin = await ler_pagina(tab)
+            todos |= novos; todos |= set(_api)
             tot = len(todos)
             at_bottom = (st + ch) >= (sh - 12) if sh else False
             nada_novo = (tot == prev_n)
