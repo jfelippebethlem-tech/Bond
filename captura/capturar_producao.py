@@ -266,12 +266,12 @@ async def capturar_post(tab, code):
             prev_st = st
             if estavel_fundo >= 3 and len(todos) > 0:
                 motivo = "fundo_atingido"; break
-            if sem_avanco >= 12:                         # gesto não move o scroll (travou/topo)
+            if sem_avanco >= 12:                         # gesto não move o scroll (travou/topo = throttle)
                 motivo = "scroll_nao_avanca"; break
-            if pausado(): return sorted(todos), "pausado"
+            if pausado(): return sorted(todos), "pausado", motivo
         faltam = max(0, sh - (st + ch))
         log(f"      -> fim: {len(todos)} curtidores | motivo={motivo} | faltam={faltam}px | passos={passos}")
-        return sorted(todos), "ok"
+        return sorted(todos), "ok", motivo
     finally:
         globals()["_escutando"] = False
 
@@ -329,24 +329,38 @@ async def rodar():
                 tab.add_handler(uc.cdp.network.LoadingFinished, _on_finished)
                 dono_ok = await esperar_dono(tab)
                 if not dono_ok: log("ciclo abortado: conta dona não ativa (sem captura p/ não regredir ao teto ~100).")
+                throttle = 0                              # nº de capturas degradadas seguidas (abort-on-bloqueio)
                 for post in (sel if dono_ok else []):
                     if ATE and now() >= ATE: break
                     if pausado(): log("⏸️ pausa detectada no meio do ciclo."); break
                     code = post["code"]; apilike = post.get("like_count")
                     try:
-                        users, status = await capturar_post(tab, code)
+                        users, status, motivo = await capturar_post(tab, code)
                     except Exception as e:
-                        users, status = None, f"erro:{str(e)[:60]}"
-                    if users is None:
-                        log(f"   {code}: FALHOU ({status}) | api_like={apilike}")
-                        registrar_ledger({"code": code, "ok": False, "status": status, "like_count": apilike, "target": TARGET, "teste": TESTE})
+                        users, status, motivo = None, f"erro:{str(e)[:60]}", "erro"
+                    n = len(users) if users else 0
+                    prev_n = (led.get(code) or {}).get("unicos")
+                    # GUARD anti-throttle: NÃO salvar captura degradada (senão corrompe o bom valor).
+                    # Degradado = scroll travou, OU n minúsculo p/ post com curtidas, OU colapso vs último.
+                    degradado = (status == "pausado" or motivo == "scroll_nao_avanca"
+                                 or (n <= 15 and (apilike or 0) > 30)
+                                 or (prev_n and prev_n > 40 and n < prev_n * 0.5))
+                    if users is None or degradado:
+                        log(f"   {code}: DESCARTADO (n={n} motivo={motivo} status={status} prev={prev_n}) — NÃO salvo (preserva o bom)")
+                        registrar_ledger({"code": code, "ok": False, "status": ("degradado" if degradado else status), "n": n, "like_count": apilike, "target": TARGET})
+                        if status != "pausado":
+                            throttle += 1
+                            if throttle >= 2:
+                                log("🛑 ABORTA ciclo: 2 capturas degradadas seguidas = conta throttled. Esfriar."); break
+                        else:
+                            break
                     else:
-                        n = len(users); cap = (TESTE and apilike and apilike > 105 and 95 <= n <= 110)
-                        nota = " [cap conta-teste]" if cap else (" ✓EXATO" if apilike == n else f" (api={apilike})")
+                        throttle = 0
+                        nota = " ✓EXATO" if apilike == n else f" (api={apilike})"
                         log(f"   {code}: {n} curtidores{nota} | status={status}")
                         salvar_por_post(code, users)
                         reescrever_contrato(posts)
-                        registrar_ledger({"code": code, "ok": True, "status": status, "unicos": n, "like_count": apilike, "target": TARGET, "teste": TESTE})
+                        registrar_ledger({"code": code, "ok": True, "status": status, "unicos": n, "like_count": apilike, "target": TARGET})
                     await asyncio.sleep(humano())          # pausa humana entre posts
             finally:
                 try: browser.stop()
