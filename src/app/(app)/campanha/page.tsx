@@ -48,15 +48,18 @@ export default function CampanhaPage() {
   const [tema, setTema] = useState('')
   const [copied, setCopied] = useState(false)
   const [tab, setTab] = useState<'diagnostico'|'viral'|'historico'>('diagnostico')
+  const [metaAds, setMetaAds] = useState<{ ativo: boolean; motivo?: string; periodo?: string; gasto?: number; alcance?: number; seguidores?: number | null; custoPorSeguidor?: number | null } | null>(null)
 
   async function loadData() {
     setLoading(true)
-    const [ins, hor] = await Promise.all([
+    const [ins, hor, ads] = await Promise.all([
       fetch('/api/campanha?tipo=insights').then(r => r.json()),
       fetch('/api/campanha?tipo=horarios').then(r => r.json()),
+      fetch('/api/campanha?tipo=meta_ads').then(r => r.json()).catch(() => null),
     ])
     setInsights(Array.isArray(ins) ? ins : [])
     setHorarios(hor && !hor.error ? hor : null)
+    setMetaAds(ads ?? null)
     setLoading(false)
   }
 
@@ -295,6 +298,29 @@ export default function CampanhaPage() {
           {/* CONTEÚDO VIRAL */}
           {tab === 'viral' && (
             <div className="space-y-5">
+              {/* META ADS — placeholder até ativar verba */}
+              <div className="card border border-dashed border-gray-300">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-blue-500" />
+                    <h2 className="font-semibold text-gray-900">Meta Ads</h2>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${metaAds?.ativo ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>{metaAds?.ativo ? 'ativo' : 'desligado'}</span>
+                </div>
+                {metaAds?.ativo ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div><div className="text-xl font-bold text-gray-900">R$ {(metaAds.gasto ?? 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div><div className="text-xs text-gray-500">gasto ({metaAds.periodo})</div></div>
+                    <div><div className="text-xl font-bold text-gray-900">{(metaAds.alcance ?? 0).toLocaleString('pt-BR')}</div><div className="text-xs text-gray-500">alcance</div></div>
+                    <div><div className="text-xl font-bold text-green-600">{metaAds.seguidores != null ? '+' + metaAds.seguidores.toLocaleString('pt-BR') : '—'}</div><div className="text-xs text-gray-500">seguidores ganhos</div></div>
+                    <div><div className="text-xl font-bold text-gray-900">{metaAds.custoPorSeguidor != null ? 'R$ ' + metaAds.custoPorSeguidor.toFixed(2) : '—'}</div><div className="text-xs text-gray-500">custo/seguidor</div></div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    Quando você <b>ativar verba</b>, o desempenho dos anúncios aparece aqui: gasto, alcance, <b>seguidores ganhos</b> e <b>custo por seguidor</b> — sem mensalidade (API nativa da Meta, substitui o Windsor.ai). Para ligar: defina <code className="bg-gray-100 px-1 rounded">META_AD_ACCOUNT_ID</code> e regere o token com escopo <code className="bg-gray-100 px-1 rounded">ads_read</code>.
+                  </p>
+                )}
+              </div>
+
               <div className="card">
                 <div className="flex items-center gap-2 mb-4">
                   <Zap className="w-4 h-4 text-yellow-500" />
