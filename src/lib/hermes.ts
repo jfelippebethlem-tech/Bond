@@ -78,7 +78,20 @@ export async function callAI(
 
 // ─── Memória ────────────────────────────────────────────────────────────────────
 
+// CONHECIMENTO SUPERVISIONADO (curado pelo Claude) — read-only para o Hermes.
+// O Hermes CONSULTA, mas NUNCA escreve nem sobrescreve. Só o Claude cura (via curarCerebro).
+const TIPOS_PROTEGIDOS = new Set(['cerebro'])
+const CHAVES_PROTEGIDAS = new Set(['playbook_diretor', 'playbook_externo', 'playbook_psico'])
+export function ehProtegido(tipo: string, chave: string): boolean {
+  return TIPOS_PROTEGIDOS.has(tipo) || CHAVES_PROTEGIDAS.has(chave)
+}
+
 export async function lembrar(tipo: string, chave: string, conteudo: string, relevancia = 1.0) {
+  // GUARDA: o Hermes não pode escrever/sobrescrever o conhecimento curado pelo Claude.
+  if (ehProtegido(tipo, chave)) {
+    console.warn(`[hermes] lembrar BLOQUEADO em ${tipo}/${chave} — conhecimento supervisionado (read-only).`)
+    return
+  }
   await prisma.hermesMemoria.upsert({
     where: { tipo_chave: { tipo, chave } },
     update: { conteudo, relevancia, atualizadoEm: new Date() },

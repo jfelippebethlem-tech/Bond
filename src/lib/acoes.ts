@@ -24,6 +24,7 @@ import { analisarPadroesCampanha, sugerirConteudoViral, analisarMelhoresHorarios
 import { analisarPostViral, analisarPostsPendentes } from './viral/analista'
 import { aprenderPadroesVirais } from './viral/aprendizado'
 import { resumoMetaAds, metaAdsPorAnuncio } from './social/metaads'
+import { consultarCerebro } from './cerebro'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Params = Record<string, any>
@@ -89,6 +90,13 @@ export const CATALOGO: Acao[] = [
     categoria: 'conteudo', seguranca: 'auto',
     parametros: { limite: 'quantos posts no máximo (opcional, padrão 100)' },
     executar: (p) => analisarPostsPendentes(p.limite ?? 100),
+  },
+  {
+    nome: 'consultar_cerebro',
+    descricao: 'Consulta o SEGUNDO CÉREBRO (conhecimento curado e supervisionado pelo Claude) — read-only. O Hermes lê e não esquece, mas nunca escreve. Param opcional: busca (palavra-chave).',
+    categoria: 'estado', seguranca: 'auto',
+    parametros: { busca: 'palavra-chave para filtrar (opcional)' },
+    executar: (p) => consultarCerebro(p.busca),
   },
   {
     nome: 'aprender_viral',
