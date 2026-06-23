@@ -91,28 +91,40 @@ def precisa_capturar(post, led):
     if not r: return True
     return r.get("like_count") != post.get("like_count")
 
-# ---------- seleção do ciclo ----------
-def selecionar(posts, led, agora, ciclo_idx):
-    top10 = posts[:10]
-    antigos = posts[10:]
-    seg_qui = agora.weekday() in (0, 3)         # Mon=0, Thu=3
-    def mais_antigo_do_ledger(lista):           # menos recentemente capturados primeiro (rotação)
-        return sorted(lista, key=lambda p: (led.get(p["code"], {}).get("quando") or ""))
-    def backlog_pendentes(n):
-        pend = [p for p in antigos if precisa_capturar(p, led)]
-        pend.sort(key=lambda p: p.get("timestamp") or "")   # mais ANTIGO primeiro
-        return pend[:n]
-    if ciclo_idx == 0:
-        if seg_qui:
-            return mais_antigo_do_ledger(top10)[:5]          # Seg/Qui: 5 dos top-10 no ciclo 1
-        recentes = mais_antigo_do_ledger(top10)[:2]          # 2 rotativos
-        velhos = backlog_pendentes(20); random.shuffle(velhos)
-        return recentes + velhos[:3]                          # + 3 antigos aleatórios
-    if ciclo_idx == 1 and seg_qui:
-        # os 5 menos-recentemente-capturados; como o ciclo 0 já marcou os seus no ledger,
-        # estes são automaticamente os OUTROS 5 do top-10 (antes era [5:10] = re-pegava os mesmos).
-        return mais_antigo_do_ledger(top10)[:5]              # Seg/Qui: resto dos top-10
-    return backlog_pendentes(5)                               # ciclos seguintes: backlog antigo
+# ---------- seleção do ciclo (cadência do dono) ----------
+# Cada disparo do cron = 1 run = 6–10 posts (aleatório), SEMPRE >=1 dos últimos 10 dias.
+# 6 runs/dia (1/h, 23h→04h). Seg/Qui: as 2 PRIMEIRAS runs focam recentes; as 4 restantes
+# aleatórias. A run se localiza pelo RELÓGIO (hora 23,0,1,2,3,4 -> índice 1..6).
+RUN_POR_HORA = {23: 1, 0: 2, 1: 3, 2: 4, 3: 5, 4: 6}
+def _ts_post(p):
+    s = p.get("timestamp") or ""
+    try: return datetime.datetime.fromisoformat(s.replace("+0000", "+00:00")).replace(tzinfo=None)
+    except Exception: return datetime.datetime.min
+
+def selecionar(posts, led, agora):
+    n = random.randint(int(env("IG_MIN_POSTS", "6")), int(env("IG_MAX_POSTS", "10")))
+    run_idx = RUN_POR_HORA.get(agora.hour, 0)                  # 0 = fora da janela (disparo manual)
+    # bloco do dia: a run das 23h pertence ao dia que começa; 00–04h ao dia anterior
+    bloco = agora.date() if agora.hour == 23 else (agora - datetime.timedelta(days=1)).date()
+    seg_qui = bloco.weekday() in (0, 3)                        # Seg=0, Qui=3
+    recent_run = seg_qui and run_idx in (1, 2)                 # Seg/Qui: 2 primeiras runs = recentes
+    limite = agora - datetime.timedelta(days=10)               # "últimos 10 dias"
+    recentes = [p for p in posts if _ts_post(p) >= limite]
+    antigos  = [p for p in posts if _ts_post(p) <  limite]
+    def rot(lst):                                             # menos-recentemente-capturado primeiro
+        return sorted(lst, key=lambda p: (led.get(p["code"], {}).get("quando") or ""))
+    sel = []
+    if recent_run:                                           # foco nos recentes
+        sel = rot(recentes)[:n]
+        if len(sel) < n:                                     # completa com antigos se faltar
+            sel += [p for p in rot(antigos) if p not in sel][:n - len(sel)]
+    else:                                                    # run aleatória: SEMPRE 1 recente + resto aleatório
+        if recentes: sel.append(rot(recentes)[0])
+        pool = antigos[:]; random.shuffle(pool)
+        sel += [p for p in pool if p not in sel][:max(0, n - len(sel))]
+        if len(sel) < n:                                     # backlog acabou -> completa com recentes
+            sel += [p for p in rot(recentes) if p not in sel][:n - len(sel)]
+    return sel[:n]
 
 # ---------- captura de 1 post — MÉTODO DONO (página /liked_by/, lista COMPLETA) ----------
 # Logado como o dono, /p/<code>/liked_by/ é uma PÁGINA que lista TODOS (sem teto ~100 de
@@ -303,7 +315,7 @@ async def rodar():
         if CODES and ciclo == 0:
             sel = [by_code[c] for c in CODES if c in by_code]
         else:
-            sel = selecionar(posts, led, now(), ciclo)
+            sel = selecionar(posts, led, now())
         sel = [p for p in sel if p]
         log(f"--- ciclo {ciclo} ({now():%a %H:%M}) | {len(sel)} posts: {[p['code'] for p in sel]} ---")
         if not sel:
