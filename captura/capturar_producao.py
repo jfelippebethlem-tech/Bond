@@ -48,6 +48,7 @@ if env("IG_ATE"):
     try: ATE = datetime.datetime.strptime(env("IG_ATE"), "%Y-%m-%d %H:%M")
     except Exception: ATE = None
 PAUSE_FILES = [os.path.join(d, ".pause_captura") for d in (OUT, HERE, OUT_BASE)]
+COOLDOWN_FILE = os.path.join(OUT, ".cooldown_until")   # kill-switch: descansa a conta 24h após bloqueio
 
 os.makedirs(OUT, exist_ok=True)
 def rand(a, b): return random.uniform(a, b)
@@ -62,6 +63,26 @@ def log(msg):
 
 def pausado():
     return any(os.path.exists(p) for p in PAUSE_FILES)
+
+def em_cooldown():
+    # True se estamos no descanso de 24h pós-bloqueio. Auto-expira (apaga o arquivo).
+    try:
+        if not os.path.exists(COOLDOWN_FILE): return False
+        until = datetime.datetime.fromisoformat(open(COOLDOWN_FILE, encoding="utf-8").read().strip())
+        if now() < until: return True
+        os.remove(COOLDOWN_FILE)   # passou as 24h -> libera
+        return False
+    except Exception:
+        return False
+
+def ativar_cooldown(horas=24):
+    # kill-switch: ao menor sinal de bloqueio, trava TUDO por `horas` (default 24h).
+    until = now() + datetime.timedelta(hours=horas)
+    try:
+        with open(COOLDOWN_FILE, "w", encoding="utf-8") as f: f.write(until.isoformat())
+    except Exception: pass
+    log(f"🧊 COOLDOWN ATIVADO até {until:%Y-%m-%d %H:%M} ({horas}h) — sinal de bloqueio; conta descansando.")
+    return until
 
 # ---------- índice + ledger ----------
 def carregar_index():
@@ -311,6 +332,9 @@ async def rodar():
             log(f"FIM: atingiu o limite {ATE}"); break
         if pausado():
             log("⏸️ .pause_captura presente — abortando a noite."); break
+        if em_cooldown():
+            until = open(COOLDOWN_FILE, encoding="utf-8").read().strip()
+            log(f"🧊 EM COOLDOWN (até {until}) — conta descansando 24h pós-bloqueio. Sem captura."); break
         led = carregar_ledger()
         if CODES and ciclo == 0:
             sel = [by_code[c] for c in CODES if c in by_code]
@@ -351,7 +375,9 @@ async def rodar():
                         if status != "pausado":
                             throttle += 1
                             if throttle >= 2:
-                                log("🛑 ABORTA ciclo: 2 capturas degradadas seguidas = conta throttled. Esfriar."); break
+                                log("🛑 BLOQUEIO: 2 capturas degradadas seguidas = conta throttled.")
+                                ativar_cooldown(24)   # kill-switch: descansa 24h
+                                break
                         else:
                             break
                     else:
