@@ -70,6 +70,27 @@ export async function aprenderPadroesVirais() {
   // meta-cognição: o score que demos prediz a viralidade real (sends+saves)?
   const calibr = correlacaoRank(linhas.map((l) => l.score), linhas.map((l) => l.viral))
 
+  // distribuição de GATILHOS MENTAIS: quanto cada gatilho é usado × viral médio de quem o usa
+  const gatStat: Record<string, { n: number; somaViral: number }> = {}
+  for (const s of scores) {
+    const p = pBy.get(s.postId)
+    if (!p || !p.alcance) continue
+    const viral = ((p.compartilhos * 0.6 + p.saves * 0.4) / p.alcance) * 100
+    let sin: { gatilhos?: string[] } = {}
+    try { sin = JSON.parse(s.sinais || '{}') } catch { /* */ }
+    for (const g of sin.gatilhos || []) {
+      const k = String(g).toLowerCase().replace(/[^a-zà-ú/ ]/gi, '').trim().slice(0, 30)
+      if (!k) continue
+      gatStat[k] = gatStat[k] || { n: 0, somaViral: 0 }
+      gatStat[k].n++; gatStat[k].somaViral += viral
+    }
+  }
+  const gatTxt = Object.entries(gatStat)
+    .map(([g, v]) => ({ g, n: v.n, vm: +(v.somaViral / v.n).toFixed(2) }))
+    .sort((a, b) => b.vm - a.vm)
+    .map((x) => `${x.g}: usado ${x.n}× | viral médio ${x.vm}%`)
+    .join('\n') || '(sem gatilhos marcados ainda)'
+
   const fmt = (arr: Linha[]) => arr.map((l) => `• ${l.tipo} | viral=${l.viral}% (🔁${l.sends} 💾${l.saves} /alc${l.reach}) | score que demos=${l.score} | gancho=${l.gancho ?? '—'} | ${l.dia === 0 ? 'Dom' : ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][l.dia]} ${l.hora}h${l.tema ? ' | tema:' + l.tema : ''} | "${l.conteudo}" | IA viu: ${l.resumo}`).join('\n')
 
   const prompt = `Você é o cientista de dados de conteúdo do Dep. Jorge Felippe Neto (PL/RJ). Aprenda os PADRÕES REAIS DE VIRALIZAÇÃO DESTE PERFIL a partir dos dados abaixo. O sinal de viral é SENDS+SAVES por alcance (🔁 compartilhamentos + 💾 salvamentos, ponderados) — é o que faz o Instagram distribuir para não-seguidores.
@@ -81,6 +102,9 @@ POSTS QUE MENOS ESPALHARAM:
 ${fmt(baixo)}
 
 CALIBRAÇÃO DO NOSSO SCORE: correlação (rank) entre o score que atribuímos e o sends/alcance real = ${calibr.toFixed(2)} (1=perfeito, 0=nenhuma, negativo=invertido). Base: ${linhas.length} posts.
+
+DISTRIBUIÇÃO DE GATILHOS MENTAIS (quanto cada um é usado × viral médio real de quem o usa — ordenado por viral):
+${gatTxt}
 
 Seja MINUCIOSO e ESPECÍFICO — sempre que possível CITE a palavra/frase/local real dos exemplos. Nada genérico. Responda em português do Brasil, sem markdown com asteriscos, EXATAMENTE neste formato:
 
@@ -105,9 +129,12 @@ O QUE TRAVA A DIFUSÃO
 AJUSTE DO MODELO (meta-cognição)
 [com base na calibração ${calibr.toFixed(2)} sobre ${linhas.length} posts: o nosso score está super ou subestimando o quê? que sinal pesar mais/menos?]
 
+GATILHOS: SATURADOS vs SUBUSADOS DE ALTO POTENCIAL
+[com base na DISTRIBUIÇÃO DE GATILHOS acima: quais estão SOBRE-usados mas com viral médio baixo (parar de repetir)? quais estão SUBUSADOS mas com viral alto (USAR MUITO MAIS)? cite os números e prescreva]
+
 REGRAS APRENDIDAS (8-10 regras diretas, específicas deste perfil, prontas para o próximo post)`
 
-  const playbook = await callAI([{ role: 'user', content: prompt }], 2600)
+  const playbook = await callAI([{ role: "user", content: prompt }], 3200)
 
   await lembrar('viral', 'playbook', playbook, 1.0)
   await lembrar('viral', 'playbook_meta', JSON.stringify({ n: linhas.length, calibracao: +calibr.toFixed(2), atualizadoEm: new Date().toISOString() }))
