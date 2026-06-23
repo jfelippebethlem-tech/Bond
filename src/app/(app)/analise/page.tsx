@@ -7,7 +7,13 @@ type Insight = { id: string; titulo: string; descricao: string; tipo: string; cr
 type ViralScore = {
   id: string; postId: string; superficie: string; scoreTotal: number; diagnostico: string
   camada: string; temaCasado: string | null; ganchoNota: number | null; conteudoResumo: string | null
+  sinais: string | null
   post: { conteudo: string; url: string | null; publicadoEm: string; likes: number; comentarios: number } | null
+}
+
+// extrai sendWorthy + gatilhos do JSON de sinais (gravado pelo analista)
+function parseSinais(s: string | null): { sendWorthy?: number | null; gatilhos?: string[] } {
+  try { return s ? JSON.parse(s) : {} } catch { return {} }
 }
 
 const corScore = (s: number) => (s >= 60 ? 'bg-green-100 text-green-700' : s >= 35 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700')
@@ -264,7 +270,7 @@ export default function AnalisePage() {
               </select>
             </div>
             <div className="space-y-2">
-              {viralView.map((v) => (
+              {viralView.map((v) => { const sin = parseSinais(v.sinais); return (
                 <details key={v.id} className="rounded-lg border border-gray-200 bg-white">
                   <summary className="px-4 py-2.5 cursor-pointer text-sm flex items-center justify-between gap-3">
                     <span className="flex items-center gap-2 min-w-0">
@@ -273,6 +279,7 @@ export default function AnalisePage() {
                       <span className="truncate text-gray-700">{v.post?.conteudo?.slice(0, 70) || v.postId}</span>
                     </span>
                     <span className="flex items-center gap-2 shrink-0">
+                      {sin.sendWorthy != null && <span className={`text-[10px] rounded px-1 border ${sin.sendWorthy >= 7 ? 'text-purple-700 border-purple-300 bg-purple-50' : 'text-gray-400 border-gray-200'}`} title="checklist send-worthy (psicologia do compartilhamento)">send {sin.sendWorthy}/10</span>}
                       {v.temaCasado && <span className="text-xs text-green-600 hidden sm:inline">🔥 {v.temaCasado.slice(0, 20)}</span>}
                       <span className="text-[10px] text-gray-400 border border-gray-200 rounded px-1">cam {v.camada}</span>
                     </span>
@@ -288,8 +295,15 @@ export default function AnalisePage() {
                         <div className="text-sm text-gray-600 whitespace-pre-line leading-relaxed mt-2">{v.conteudoResumo}</div>
                       </details>
                     )}
+                    {sin.gatilhos && sin.gatilhos.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-gray-400 uppercase tracking-wide">gatilhos:</span>
+                        {sin.gatilhos.slice(0, 6).map((g, i) => <span key={i} className="text-[11px] bg-purple-50 text-purple-700 border border-purple-100 rounded-full px-2 py-0.5">{g}</span>)}
+                      </div>
+                    )}
                     <div className="flex items-center gap-4 text-xs text-gray-500">
                       {v.ganchoNota != null && <span>Gancho: <b className="text-gray-700">{v.ganchoNota}/10</b></span>}
+                      {sin.sendWorthy != null && <span>Send-worthy: <b className={sin.sendWorthy >= 7 ? 'text-purple-700' : 'text-gray-700'}>{sin.sendWorthy}/10</b></span>}
                       {v.post && <span>❤ {v.post.likes} · 💬 {v.post.comentarios}</span>}
                       <button onClick={() => gerarRel('post', v.postId)} disabled={!!gerandoRel} className="flex items-center gap-1 text-indigo-600 hover:underline disabled:opacity-50 ml-auto">
                         {gerandoRel === v.postId ? <Loader2 size={11} className="animate-spin" /> : <FileText size={11} />} Gerar relatório
@@ -298,7 +312,7 @@ export default function AnalisePage() {
                     </div>
                   </div>
                 </details>
-              ))}
+              ) })}
             </div>
           </>
         )}
