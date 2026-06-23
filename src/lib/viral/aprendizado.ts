@@ -12,13 +12,15 @@ const MIN_N = 8
 
 /** Playbook aprendido (algoritmo) + avaliação premium do Claude (diretor), para injetar nos prompts. */
 export async function playbookAtual(): Promise<string> {
-  const [m, diretor] = await Promise.all([
+  const [m, diretor, externo] = await Promise.all([
     prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook' } } }).catch(() => null),
     prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_diretor' } } }).catch(() => null),
+    prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_externo' } } }).catch(() => null),
   ])
   return [
     diretor?.conteudo ? `AVALIAÇÃO ESTRATÉGICA (diretor — palavras/frases que funcionam e que falham neste perfil):\n${diretor.conteudo}` : '',
-    m?.conteudo ? `PADRÕES APRENDIDOS DOS DADOS:\n${m.conteudo}` : '',
+    m?.conteudo ? `PADRÕES APRENDIDOS DOS DADOS (o que já funciona aqui):\n${m.conteudo}` : '',
+    externo?.conteudo ? `TÁTICAS EXTERNAS A TESTAR (proven na internet, ainda não usadas neste perfil — exploração):\n${externo.conteudo}` : '',
   ].filter(Boolean).join('\n\n')
 }
 

@@ -67,7 +67,10 @@ POST 2:
 [mesmo formato]
 
 POST 3:
-[mesmo formato]`
+[mesmo formato]
+
+TÁTICA DE CRESCIMENTO DA SEMANA:
+[escolha 1 tática de DISTRIBUIÇÃO/aquisição do playbook externo (ex.: Trial Reels para testar no não-seguidor, news-jacking factual no mesmo dia, colab/aparição em perfil maior, série recorrente nomeada) e diga EXATAMENTE como aplicar esta semana]`
 
   const recomendacao = await callAI([{ role: 'user', content: prompt }], 1400)
 
