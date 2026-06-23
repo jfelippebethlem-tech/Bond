@@ -10,12 +10,14 @@ import { getInstagramMedia, analisarMidiaPost } from '../social/midia'
 import { getInstagramPostInsights } from '../social/instagram'
 import { pontuarViral, superficieDeTipo, type SinaisViral } from './algoritmo'
 import { tendenciasParaPrompt } from './tendencias'
-import { playbookAtual } from './aprendizado'
+import { playbookParaAnalise } from './aprendizado'
 
 type Estruturado = {
   ganchoNota?: number
   ritmoNota?: number
   qualidadeNota?: number
+  sendWorthy?: number // 0-10: quantos itens do checklist psicológico de send o post tem
+  gatilhos?: string[] // gatilhos mentais que o post usa
   temWatermarkTiktok?: boolean
   ehRepost?: boolean
   engagementBait?: boolean
@@ -83,10 +85,12 @@ export async function analisarPostViral(postId: string, forcar = false) {
 
   // (2) Estrutura notas + casa com tendências + diagnóstico (texto grátis: Cerebras).
   const tendencias = await tendenciasParaPrompt(72)
-  const playbook = await playbookAtual()
-  const prompt = `Você é um analista de viralização de Instagram para um deputado estadual (RJ).${playbook ? `\n\nPLAYBOOK APRENDIDO DESTE PERFIL (o que comprovadamente espalha aqui — use como referência no diagnóstico):\n${playbook.slice(0, 1100)}\n` : ''}
+  const playbook = await playbookParaAnalise()
+  const prompt = `Você é um analista de viralização de Instagram para um deputado estadual (RJ).${playbook ? `\n\n${playbook}\n` : ''}
 Com base na ANÁLISE DE CONTEÚDO abaixo (feita assistindo a mídia), nas MÉTRICAS PÚBLICAS e nas TENDÊNCIAS atuais, devolva APENAS um JSON válido (sem texto antes/depois) no formato:
-{"ganchoNota":0-10,"ritmoNota":0-10,"qualidadeNota":0-10,"temWatermarkTiktok":bool,"ehRepost":bool,"engagementBait":bool,"temaEmAlta":bool,"temaCasado":"termo da tendência que casou ou null","diagnostico":"3-5 frases honestas, em português: por que (não) viralizou; CITE palavras/frases concretas da legenda que ajudaram ou atrapalharam (e sugira a reescrita do gancho/abertura); o que mudar no próximo"}
+{"ganchoNota":0-10,"ritmoNota":0-10,"qualidadeNota":0-10,"sendWorthy":0-10,"gatilhos":["gatilhos mentais usados, ex: indignação moral, inimigo comum, prova social, awe, urgência, frase-bandeira"],"temWatermarkTiktok":bool,"ehRepost":bool,"engagementBait":bool,"temaEmAlta":bool,"temaCasado":"termo da tendência que casou ou null","diagnostico":"3-5 frases honestas, em português: por que (não) viralizou; CITE palavras/frases concretas; avalie pela PSICOLOGIA do send/save (gatilhos, emoção de ativação, NÓS x ELES); o que mudar no próximo"}
+
+Para sendWorthy, conte quantos dos 10 itens do CHECKLIST SEND-WORTHY (na PSICOLOGIA acima) o post realmente tem (0 a 10).
 
 ANÁLISE DE CONTEÚDO:
 ${leituraConteudo.slice(0, 2500)}
@@ -98,7 +102,7 @@ ${tendencias.slice(0, 1200)}
 
 Regra: temaEmAlta=true só se o tema do post realmente casar com alguma tendência listada. Seja honesto.`
 
-  const resp = await callAI([{ role: 'user', content: prompt }], 900)
+  const resp = await callAI([{ role: 'user', content: prompt }], 1300)
   const e = extrairJson(resp)
 
   // (3) Score determinístico via algoritmo.ts.
@@ -106,6 +110,7 @@ Regra: temaEmAlta=true só se o tema do post realmente casar com alguma tendênc
     ganchoNota: clampNota(e.ganchoNota),
     ritmoNota: clampNota(e.ritmoNota),
     qualidadeNota: clampNota(e.qualidadeNota),
+    gatilhosNota: clampNota(e.sendWorthy),
     likes: post.likes,
     comentarios: post.comentarios,
     compartilhos: post.compartilhos,
@@ -132,13 +137,13 @@ Regra: temaEmAlta=true só se o tema do post realmente casar com alguma tendênc
     where: { postId },
     create: {
       postId, superficie, scoreTotal: res.scoreTotal, diagnostico,
-      sinais: JSON.stringify({ breakdown: res.breakdown, gates: res.gatesAplicados }),
+      sinais: JSON.stringify({ breakdown: res.breakdown, gates: res.gatesAplicados, sendWorthy: clampNota(e.sendWorthy), gatilhos: e.gatilhos || [] }),
       ganchoNota: sinais.ganchoNota, temaEmAlta: !!e.temaEmAlta, temaCasado: e.temaCasado || null,
       camada: res.camada, conteudoResumo: leituraConteudo.slice(0, 800),
     },
     update: {
       superficie, scoreTotal: res.scoreTotal, diagnostico,
-      sinais: JSON.stringify({ breakdown: res.breakdown, gates: res.gatesAplicados }),
+      sinais: JSON.stringify({ breakdown: res.breakdown, gates: res.gatesAplicados, sendWorthy: clampNota(e.sendWorthy), gatilhos: e.gatilhos || [] }),
       ganchoNota: sinais.ganchoNota, temaEmAlta: !!e.temaEmAlta, temaCasado: e.temaCasado || null,
       camada: res.camada, conteudoResumo: leituraConteudo.slice(0, 800),
     },

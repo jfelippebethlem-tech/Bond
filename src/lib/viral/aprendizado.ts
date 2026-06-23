@@ -12,16 +12,25 @@ const MIN_N = 8
 
 /** Playbook aprendido (algoritmo) + avaliação premium do Claude (diretor), para injetar nos prompts. */
 export async function playbookAtual(): Promise<string> {
-  const [m, diretor, externo] = await Promise.all([
+  const [m, diretor, externo, psico] = await Promise.all([
     prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook' } } }).catch(() => null),
     prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_diretor' } } }).catch(() => null),
     prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_externo' } } }).catch(() => null),
+    prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_psico' } } }).catch(() => null),
   ])
   return [
+    psico?.conteudo ? `PSICOLOGIA DO SEND/SAVE (gatilhos mentais e psicologia de massas — o PORQUÊ):\n${psico.conteudo}` : '',
     diretor?.conteudo ? `AVALIAÇÃO ESTRATÉGICA (diretor — palavras/frases que funcionam e que falham neste perfil):\n${diretor.conteudo}` : '',
     m?.conteudo ? `PADRÕES APRENDIDOS DOS DADOS (o que já funciona aqui):\n${m.conteudo}` : '',
     externo?.conteudo ? `TÁTICAS EXTERNAS A TESTAR (proven na internet, ainda não usadas neste perfil — exploração):\n${externo.conteudo}` : '',
   ].filter(Boolean).join('\n\n')
+}
+
+/** Versão ENXUTA para a análise por post (só a psicologia do send/save — o checklist que o analista pontua).
+ *  Evita injetar os 4 playbooks (~15k chars) em cada análise — economia + o modelo não perde os campos. */
+export async function playbookParaAnalise(): Promise<string> {
+  const psico = await prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_psico' } } }).catch(() => null)
+  return psico?.conteudo || ''
 }
 
 type Linha = {

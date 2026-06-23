@@ -18,6 +18,7 @@ export type SinaisViral = {
   ganchoNota?: number | null // 0-10 (prende nos 1ºs 3s / 1ª imagem?)
   ritmoNota?: number | null // 0-10 (edição/ritmo)
   qualidadeNota?: number | null // 0-10 (visual/áudio)
+  gatilhosNota?: number | null // 0-10 (checklist send-worthy: gatilhos mentais + psicologia de massas)
   // ── Engajamento público (camada A — temos hoje) ──
   likes?: number
   comentarios?: number
@@ -62,12 +63,13 @@ const PESOS_ALGORITMO: Record<Superficie, Record<string, number>> = {
 
 // ─── Pesos da camada A (proxy de conteúdo — sem insights) ─────────────────────────
 // Gancho é o proxy nº1 de retenção; engajamento/seguidor é o termômetro público.
-// Loop 2 (2026-06): gancho subiu 0.35→0.42 — meta-cognição do Hermes + pesquisa (65% abandona nos 3s).
+// gancho 0.35→0.42 (Loop 2); + gatilhos 0.22 (psicologia send/save: checklist send-worthy).
 const PESOS_PROXY: Record<string, number> = {
-  gancho: 0.42,
-  engRate: 0.22,
-  ritmo: 0.13,
-  qualidade: 0.08,
+  gancho: 0.3,
+  gatilhos: 0.22,
+  engRate: 0.18,
+  ritmo: 0.1,
+  qualidade: 0.05,
   temaEmAlta: 0.1,
   comentariosNorm: 0.05,
 }
@@ -132,6 +134,7 @@ export function pontuarViral(superficie: Superficie, s: SinaisViral): ResultadoV
     const engRate = s.seguidores ? sat(((s.likes ?? 0) + (s.comentarios ?? 0) + (s.compartilhos ?? 0)) / s.seguidores, 0.05) : null
     const valores: Record<string, number | null> = {
       gancho: s.ganchoNota != null ? s.ganchoNota / 10 : null,
+      gatilhos: s.gatilhosNota != null ? s.gatilhosNota / 10 : null,
       engRate,
       ritmo: s.ritmoNota != null ? s.ritmoNota / 10 : null,
       qualidade: s.qualidadeNota != null ? s.qualidadeNota / 10 : null,
