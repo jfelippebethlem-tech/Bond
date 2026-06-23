@@ -32,7 +32,7 @@ function extrair(txt: string): { sendWorthy?: number; gatilhos?: string[] } {
     const post = await prisma.bondPost.findFirst({ where: { postId: s.postId }, select: { conteudo: true, likes: true, comentarios: true } })
     const prompt = `Você é analista de viralização de Instagram (deputado RJ).\n${psico}\n\nCom base na ANÁLISE e na LEGENDA, devolva APENAS um JSON: {"sendWorthy":0-10,"gatilhos":["gatilhos mentais usados"]}. sendWorthy = quantos dos 10 itens do CHECKLIST SEND-WORTHY o post tem.\n\nANÁLISE DA MÍDIA:\n${(s.conteudoResumo || '').slice(0, 1500)}\nLEGENDA: ${(post?.conteudo || '').slice(0, 300)}\nMÉTRICAS: likes ${post?.likes ?? 0}, comentários ${post?.comentarios ?? 0}.`
     try {
-      const e = extrair(await callAI([{ role: 'user', content: prompt }], 1200))
+      const e = extrair(await callAI([{ role: 'user', content: prompt }], 1600))
       sin.sendWorthy = typeof e.sendWorthy === 'number' ? Math.max(0, Math.min(10, e.sendWorthy)) : null
       sin.gatilhos = Array.isArray(e.gatilhos) ? e.gatilhos.slice(0, 8) : []
       await prisma.bondViralScore.update({ where: { postId: s.postId }, data: { sinais: JSON.stringify(sin) } })
