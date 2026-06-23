@@ -93,9 +93,9 @@ def precisa_capturar(post, led):
 
 # ---------- seleção do ciclo (cadência do dono) ----------
 # Cada disparo do cron = 1 run = 6–10 posts (aleatório), SEMPRE >=1 dos últimos 10 dias.
-# 6 runs/dia (1/h, 23h→04h). Seg/Qui: as 2 PRIMEIRAS runs focam recentes; as 4 restantes
-# aleatórias. A run se localiza pelo RELÓGIO (hora 23,0,1,2,3,4 -> índice 1..6).
-RUN_POR_HORA = {23: 1, 0: 2, 1: 3, 2: 4, 3: 5, 4: 6}
+# 6 runs/dia (1/h, 05h→10h). Seg/Qui: as 2 PRIMEIRAS runs focam recentes; as 4 restantes
+# aleatórias. A run se localiza pelo RELÓGIO (hora 5,6,7,8,9,10 -> índice 1..6).
+RUN_POR_HORA = {5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6}
 def _ts_post(p):
     s = p.get("timestamp") or ""
     try: return datetime.datetime.fromisoformat(s.replace("+0000", "+00:00")).replace(tzinfo=None)
@@ -104,8 +104,8 @@ def _ts_post(p):
 def selecionar(posts, led, agora):
     n = random.randint(int(env("IG_MIN_POSTS", "6")), int(env("IG_MAX_POSTS", "10")))
     run_idx = RUN_POR_HORA.get(agora.hour, 0)                  # 0 = fora da janela (disparo manual)
-    # bloco do dia: a run das 23h pertence ao dia que começa; 00–04h ao dia anterior
-    bloco = agora.date() if agora.hour == 23 else (agora - datetime.timedelta(days=1)).date()
+    # janela 05h–10h é toda no mesmo dia → bloco = hoje
+    bloco = agora.date()
     seg_qui = bloco.weekday() in (0, 3)                        # Seg=0, Qui=3
     recent_run = seg_qui and run_idx in (1, 2)                 # Seg/Qui: 2 primeiras runs = recentes
     limite = agora - datetime.timedelta(days=10)               # "últimos 10 dias"
