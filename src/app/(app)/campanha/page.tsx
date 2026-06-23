@@ -88,6 +88,19 @@ export default function CampanhaPage() {
     setGerandoViral(false)
   }
 
+  async function handleCalendario() {
+    setGerandoViral(true)
+    setSugestao('')
+    const res = await fetch('/api/campanha', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao: 'gerar_calendario' }),
+    })
+    const data = await res.json()
+    setSugestao(data.sugestao ?? '')
+    setGerandoViral(false)
+  }
+
   useEffect(() => { loadData() }, [])
 
   const TABS = [
@@ -288,14 +301,14 @@ export default function CampanhaPage() {
                   <h2 className="font-semibold text-gray-900">Gerador de Conteúdo Viral</h2>
                 </div>
                 <p className="text-xs text-gray-500 mb-4">
-                  Bond analisa seus posts de maior engajamento e cria conteúdo otimizado para viralizar.
+                  4 ideias de <b>ativação de rua</b> coladas no Google Trends/Notícias do RJ e BR ao vivo + a lei de viralização do seu perfil. Ou gere o <b>calendário da semana</b> (21 ativações prontas).
                 </p>
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <input
                     value={tema}
                     onChange={e => setTema(e.target.value)}
-                    className="input flex-1"
-                    placeholder="Tema opcional (ex: segurança pública, saúde, educação)..."
+                    className="input flex-1 min-w-[200px]"
+                    placeholder="Tema opcional (ex: segurança pública, custo de vida, Zona Oeste)..."
                     onKeyDown={e => e.key === 'Enter' && handleSugerirViral()}
                   />
                   <button
@@ -304,7 +317,15 @@ export default function CampanhaPage() {
                     className="btn-primary px-5 flex items-center gap-2 disabled:opacity-50 shrink-0"
                   >
                     {gerandoViral ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
-                    Gerar
+                    Ideias de rua
+                  </button>
+                  <button
+                    onClick={handleCalendario}
+                    disabled={gerandoViral}
+                    className="px-5 flex items-center gap-2 disabled:opacity-50 shrink-0 rounded-lg border border-indigo-300 text-indigo-700 font-medium hover:bg-indigo-50"
+                  >
+                    {gerandoViral ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
+                    Calendário da semana
                   </button>
                 </div>
               </div>

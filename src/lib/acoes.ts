@@ -20,7 +20,7 @@ import {
   gerarRankingCabos, buscarComentariosPendentes, sugerirResposta,
   analisarTopPosts, syncAll, gerarRelatorioSemanal,
 } from './bond'
-import { analisarPadroesCampanha, sugerirConteudoViral, analisarMelhoresHorarios } from './campanha'
+import { analisarPadroesCampanha, sugerirConteudoViral, analisarMelhoresHorarios, gerarCalendarioSemanal } from './campanha'
 import { analisarPostViral, analisarPostsPendentes } from './viral/analista'
 import { aprenderPadroesVirais } from './viral/aprendizado'
 
@@ -105,10 +105,16 @@ export const CATALOGO: Acao[] = [
   },
   {
     nome: 'sugerir_conteudo_viral',
-    descricao: 'Gera 3 sugestões de posts com alto potencial viral (texto, hashtags, melhor horário).',
+    descricao: 'Gera 4 ideias de ATIVAÇÃO DE RUA virais, coladas no Google Trends/Notícias do RJ/BR ao vivo + a lei de viralização do perfil (gancho, legenda, horário, por que espalha).',
     categoria: 'conteudo', seguranca: 'auto',
     parametros: { tema: 'tema do post (opcional)' },
     executar: (p) => sugerirConteudoViral(p.tema),
+  },
+  {
+    nome: 'gerar_calendario_semanal',
+    descricao: 'Monta o calendário da semana (7 dias × 3 ativações de rua prontas), cada uma colada numa tendência atual e na lei do perfil. Pronto para postar.',
+    categoria: 'conteudo', seguranca: 'auto', parametros: {},
+    executar: () => gerarCalendarioSemanal(),
   },
   {
     nome: 'melhores_horarios',

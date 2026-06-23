@@ -1,5 +1,7 @@
 import { prisma } from './db'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import { capturarTendencias, topTendencias } from './viral/tendencias'
+import { playbookAtual } from './viral/aprendizado'
 
 async function campanhaAI(prompt: string, maxTokens = 1200): Promise<string> {
   if (!process.env.GEMINI_API_KEY) return 'Configure GEMINI_API_KEY.'
@@ -10,7 +12,9 @@ async function campanhaAI(prompt: string, maxTokens = 1200): Promise<string> {
 Analisa dados reais de redes sociais para dar diagnósticos precisos e acionáveis.
 Seja direto, use números quando disponíveis, e foque em ações práticas.
 Responda SEMPRE em português do Brasil. Nunca use markdown com asteriscos.`,
-    generationConfig: { maxOutputTokens: maxTokens },
+    // thinkingBudget 0 → o Gemini 2.5 Flash NÃO gasta o orçamento de saída "pensando"
+    // (sem isso, o thinking consumia maxOutputTokens e a resposta vinha truncada).
+    generationConfig: { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } } as { maxOutputTokens: number },
   })
   const result = await model.generateContent(prompt)
   return result.response.text() ?? ''
@@ -159,47 +163,118 @@ META SUGERIDA PARA 30 DIAS:
   }
 }
 
-// Gera sugestão de conteúdo viral baseado nos padrões identificados
+// Gerador de ATIVAÇÕES DE RUA virais — criativo, colado no que o RJ/BR fala AGORA
+// (Google Trends + Notícias ao vivo) e na lei de viralização do próprio perfil.
 export async function sugerirConteudoViral(tema?: string) {
-  const topPosts = await prisma.bondPost.findMany({
-    where: { engajamento: { gt: 0 } },
-    orderBy: { engajamento: 'desc' },
-    take: 5,
-  })
+  // 1) tendências FRESCAS do Google (RJ + BR) — o que está mais falado agora, por métrica de busca
+  await capturarTendencias().catch(() => {})
+  const [trends, playbook, topPosts, horarios] = await Promise.all([
+    topTendencias(22, 72),
+    playbookAtual(),
+    prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, orderBy: { compartilhos: 'desc' }, take: 5 }),
+    analisarMelhoresHorarios(),
+  ])
 
-  const horarios = await analisarMelhoresHorarios()
+  const trendsTxt = trends.length
+    ? trends.map((t) => `- ${t.termo}${t.rankOuScore ? ` (~${t.rankOuScore} buscas)` : ''} [${t.fonte === 'google_trends' ? 'Trends' : 'Notícia'}/${t.geo}]`).join('\n')
+    : '(sem tendências capturadas — rode o sensor)'
 
-  const prompt = `Crie 3 sugestões de post viral para o Dep. Jorge Felippe Neto (PL/RJ)${tema ? ` sobre o tema: "${tema}"` : ''}.
+  const prompt = `Você é o DIRETOR DE CRIAÇÃO e estrategista de RUA do Dep. Jorge Felippe Neto (PL/RJ — fiscalização/controle externo, base na Zona Oeste do Rio). Crie 4 IDEIAS DE CONTEÚDO VIRAL ousadas, ORIGINAIS e ACIONÁVEIS${tema ? ` sobre "${tema}"` : ''} — cada uma ancorada numa AÇÃO/ATIVAÇÃO NA RUA concreta (algo que ele FAZ no mundo real e vira vídeo), pegando carona no que o Rio e o Brasil estão falando AGORA.
 
-PADRÃO DOS POSTS QUE MAIS ENGAJARAM:
-${topPosts.map(p => `[${p.plataforma}] ${p.conteudo.slice(0, 150)} (${p.engajamento.toFixed(1)}% engajamento)`).join('\n') || 'Sem histórico ainda'}
+O QUE ESTÁ MAIS FALADO AGORA (Google Trends + Notícias, RJ e BR — use de verdade):
+${trendsTxt}
 
-MELHOR HORÁRIO DE PUBLICAÇÃO:
-${horarios ? `Melhores horas: ${horarios.topHoras.map(h => `${h.hora}h`).join(', ')} | Melhores dias: ${horarios.topDias.map(d => d.dia).join(', ')}` : 'Sem dados suficientes'}
+A LEI DE VIRALIZAÇÃO DESTE PERFIL (o que comprovadamente ESPALHA aqui — respeite):
+${playbook ? playbook.slice(0, 1500) : 'send = dor econômica + indignação com vilão nomeado + identidade da Zona Oeste. NÃO currículo de entregas, NÃO intimidade/família. Abertura = 1 emoji + manchete em CAIXA.'}
 
-REGRAS PARA POSTS VIRAIS:
-- Linguagem: direta, próxima, como conversa entre amigos — não parlamentar
-- Deve provocar resposta emocional: indignação, orgulho, esperança, ou humor (escolha um)
-- Terminar com pergunta OU chamada para comentar
-- Para Instagram/Facebook: 2-3 parágrafos curtos + hashtags
-- Para Twitter/X: máximo 280 caracteres, impacto imediato
+POSTS QUE MAIS ESPALHARAM (tom de referência):
+${topPosts.map((p) => `- 🔁${p.compartilhos} "${(p.conteudo || '').slice(0, 90)}"`).join('\n') || '(sem histórico)'}
+MELHOR HORÁRIO: ${horarios ? `${horarios.topHoras.map((h) => h.hora + 'h').join(', ')} | ${horarios.topDias.map((d) => d.dia).join(', ')}` : 'terça a quinta, 12h e 19h'}
 
-RESPONDA EXATAMENTE NESTE FORMATO — repita 3 vezes:
+Regras de criação:
+- A AÇÃO DE RUA é o coração. Seja CRIATIVO e CORAJOSO: stunts, provas visuais, confronto com o problema real (preço da cesta no mercado, fila do hospital, buraco/abandono na ZO, transporte). Nada de "grave um vídeo falando sobre" — proponha um GESTO concreto, num LOCAL concreto.
+- Conecte SEMPRE a ação com uma das tendências/notícias da lista (cite qual).
+- Otimize para SEND (compartilhamento): a ideia tem que dar ao eleitor uma arma de expressão (identificação/indignação), não ser autoelogio.
 
-POST 1:
-PLATAFORMA: [Instagram / Facebook / Twitter]
-TEXTO: [texto completo pronto para copiar]
-HASHTAGS: [3-5 hashtags]
-PUBLICAR EM: [dia e horário recomendado]
-POR QUE VAI VIRALIZAR: [1 frase]
+Responda em português do Brasil, sem markdown com asteriscos, repetindo 4 vezes:
 
-POST 2:
+IDEIA 1: [título curto e forte]
+AÇÃO/ATIVAÇÃO NA RUA: [o gesto concreto + local específico no RJ/Zona Oeste]
+PEGA CARONA EM: [qual tendência/notícia atual da lista, e por quê]
+FORMATO: [Reel / Carrossel]
+GANCHO (3s): [a frase/imagem de abertura exata]
+LEGENDA: [texto pronto para postar, no tom que espalha]
+HORÁRIO: [dia + hora]
+POR QUE VIRALIZA: [1 frase ligando à lei do perfil — por que vão COMPARTILHAR]
+
+IDEIA 2:
 [mesmo formato]
 
-POST 3:
+IDEIA 3:
+[mesmo formato]
+
+IDEIA 4:
 [mesmo formato]`
 
-  return campanhaAI(prompt, 1200)
+  return campanhaAI(prompt, 2000)
+}
+
+// Calendário da SEMANA (7 dias × 3 ativações de rua prontas), colado nos trends ao vivo.
+// Gera DIA A DIA (uma chamada por dia) para sair completo e detalhado — sem truncar.
+const DIAS_SEMANA = [
+  { dia: 'SEGUNDA', angulo: 'DOR ECONÔMICA — custo de vida pesando no bolso da Zona Oeste' },
+  { dia: 'TERÇA', angulo: 'IDENTIDADE ZONA OESTE — pertencimento e abandono do poder público' },
+  { dia: 'QUARTA', angulo: 'INDIGNAÇÃO COM VILÃO NOMEADO + DADO — segurança/fiscalização (seu melhor dia)' },
+  { dia: 'QUINTA', angulo: 'FUI ÀS RUAS / OUVI O POVO — escuta real com moradores' },
+  { dia: 'SEXTA', angulo: 'ENTREGA REEMBALADA COMO BRIGA — conquista + próximo alvo (nunca currículo)' },
+  { dia: 'SÁBADO', angulo: 'NEWS-JACKING — o assunto que mais bombou na semana cruzado com sua pauta' },
+  { dia: 'DOMINGO', angulo: 'RESUMO DA SEMANA — o que está em jogo no Rio, chamada de comunidade' },
+]
+
+export async function gerarCalendarioSemanal() {
+  await capturarTendencias().catch(() => {})
+  const [trends, playbook, topPosts, horarios] = await Promise.all([
+    topTendencias(22, 72),
+    playbookAtual(),
+    prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, orderBy: { compartilhos: 'desc' }, take: 5 }),
+    analisarMelhoresHorarios(),
+  ])
+  const trendsTxt = trends.length
+    ? trends.map((t) => `- ${t.termo}${t.rankOuScore ? ` (~${t.rankOuScore} buscas)` : ''} [${t.fonte === 'google_trends' ? 'Trends' : 'Notícia'}/${t.geo}]`).join('\n')
+    : '(sem tendências capturadas)'
+  const horarioTxt = horarios ? `${horarios.topHoras.map((h) => h.hora + 'h').join(', ')} (melhores: ${horarios.topDias.map((d) => d.dia).join(', ')})` : 'ter-qui, 12h e 19h'
+  const tomTxt = topPosts.map((p) => `🔁${p.compartilhos} "${(p.conteudo || '').slice(0, 80)}"`).join(' | ') || '(sem histórico)'
+
+  const contexto = `CONTEXTO (use de verdade):
+TENDÊNCIAS AGORA (Google Trends + Notícias RJ/BR):
+${trendsTxt}
+LEI DE VIRALIZAÇÃO DESTE PERFIL (otimize p/ SEND, não like):
+${playbook ? playbook.slice(0, 1300) : 'send = dor econômica + indignação com vilão nomeado + identidade Zona Oeste. NÃO currículo, NÃO família. Abertura = emoji + manchete em CAIXA.'}
+TOM (posts que mais espalharam): ${tomTxt}
+HORÁRIOS BONS: ${horarioTxt}`
+
+  const dias = await Promise.all(
+    DIAS_SEMANA.map(async ({ dia, angulo }) => {
+      const prompt = `Você é o DIRETOR DE CRIAÇÃO e estrategista de RUA do Dep. Jorge Felippe Neto (PL/RJ — fiscalização, base na Zona Oeste do Rio).
+${contexto}
+
+Monte os 3 CONTEÚDOS PRONTOS de ${dia} desta semana de campanha. Ângulo-âncora do dia: ${angulo}.
+Cada conteúdo é ancorado numa AÇÃO/ATIVAÇÃO NA RUA concreta, original e específica (local real do RJ/Zona Oeste), pegando carona numa tendência da lista. Otimize para SEND (dar ao eleitor uma arma de expressão), nunca autoelogio. Varie os 3 ganchos.
+
+Responda em português, sem markdown com asteriscos, EXATAMENTE neste formato:
+=== ${dia} — [tema-âncora curto] ===
+1) FORMATO: [Reel/Carrossel] | HORÁRIO: [hora]
+   AÇÃO DE RUA: [gesto concreto + local específico no RJ/ZO]
+   PEGA CARONA EM: [qual tendência/notícia da lista]
+   GANCHO (3s): [abertura exata, emoji + CAIXA]
+   LEGENDA: [pronta para postar]
+   POR QUE VIRALIZA: [1 frase — por que vão COMPARTILHAR]
+2) [mesmo formato]
+3) [mesmo formato]`
+      return campanhaAI(prompt, 1500)
+    })
+  )
+  return dias.join('\n\n')
 }
 
 // Busca últimos insights de campanha

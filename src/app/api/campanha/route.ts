@@ -31,5 +31,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ sugestao })
   }
 
+  if (acao === 'gerar_calendario') {
+    const { gerarCalendarioSemanal } = await import('@/lib/campanha')
+    return NextResponse.json({ sugestao: await gerarCalendarioSemanal() })
+  }
+
   return NextResponse.json({ error: 'Ação inválida' }, { status: 400 })
 }

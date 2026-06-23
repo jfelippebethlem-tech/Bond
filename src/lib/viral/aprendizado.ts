@@ -46,15 +46,15 @@ export async function aprenderPadroesVirais() {
       viral: +(sendsRate * 0.6 + savesRate * 0.4).toFixed(2), // espelha os pesos do scorer (sends>saves)
       likes: p.likes, coments: p.comentarios,
       hora: new Date(p.publicadoEm).getHours(), dia: new Date(p.publicadoEm).getDay(),
-      resumo: (s.conteudoResumo || '').slice(0, 140), conteudo: (p.conteudo || '').slice(0, 80),
+      resumo: (s.conteudoResumo || '').replace(/\s+/g, ' ').slice(0, 220), conteudo: (p.conteudo || '').replace(/\s+/g, ' ').slice(0, 220),
     }]
   })
   if (linhas.length < MIN_N) return { ok: false, erro: `Poucos posts com alcance real (${linhas.length}). Rode o sync do Instagram.` }
 
   // sinal de viral = sends+saves por alcance (espelha o scorer). Ordena pelos que REALMENTE espalharam.
   const ord = [...linhas].sort((a, b) => b.viral - a.viral)
-  const top = ord.slice(0, Math.min(6, Math.floor(ord.length / 2)))
-  const baixo = ord.slice(-Math.min(6, Math.floor(ord.length / 2)))
+  const top = ord.slice(0, Math.min(8, Math.floor(ord.length / 2)))
+  const baixo = ord.slice(-Math.min(8, Math.floor(ord.length / 2)))
 
   // meta-cognição: o score que demos prediz a viralidade real (sends+saves)?
   const calibr = correlacaoRank(linhas.map((l) => l.score), linhas.map((l) => l.viral))
@@ -71,21 +71,32 @@ ${fmt(baixo)}
 
 CALIBRAÇÃO DO NOSSO SCORE: correlação (rank) entre o score que atribuímos e o sends/alcance real = ${calibr.toFixed(2)} (1=perfeito, 0=nenhuma, negativo=invertido). Base: ${linhas.length} posts.
 
-Responda em português, sem markdown com asteriscos, no formato:
+Seja MINUCIOSO e ESPECÍFICO — sempre que possível CITE a palavra/frase/local real dos exemplos. Nada genérico. Responda em português do Brasil, sem markdown com asteriscos, EXATAMENTE neste formato:
 
-O QUE FAZ ESTE PERFIL ESPALHAR (padrões reais)
-[3-5 padrões CONCRETOS dos posts que mais espalharam — formato, gancho, tema, horário, tom — específicos deste perfil, não genéricos]
+GANCHOS E ABERTURAS QUE ESPALHAM
+[padrões de abertura dos campeões — cite os ganchos reais; e os ganchos fracos dos que não espalharam]
+
+PALAVRAS E FRASES QUE ESPALHAM vs QUE MATAM O SHARE
+[liste palavras/expressões concretas dos campeões e dos fracos, citando-as]
+
+TEMAS QUE CONVERTEM (e os que não)
+[quais assuntos viram sends/saves neste perfil, e quais só dão like]
+
+FORMATOS E HORÁRIOS
+[reel vs carrossel vs foto: qual converte mais aqui; e os horários/dias que performam]
+
+TIPOS DE CONTEÚDO/AÇÃO QUE GERAM SEND
+[o "modo" que espalha — denúncia, dado, escuta de rua, identidade — com exemplo]
 
 O QUE TRAVA A DIFUSÃO
-[2-4 padrões dos que menos espalharam]
+[erros recorrentes dos fracos, com a causa]
 
 AJUSTE DO MODELO (meta-cognição)
-[com base na calibração ${calibr.toFixed(2)}, o que nosso score está super ou subestimando? que sinal pesar mais?]
+[com base na calibração ${calibr.toFixed(2)} sobre ${linhas.length} posts: o nosso score está super ou subestimando o quê? que sinal pesar mais/menos?]
 
-REGRAS APRENDIDAS PARA O PRÓXIMO POST
-[4-6 regras diretas e acionáveis, deste perfil]`
+REGRAS APRENDIDAS (8-10 regras diretas, específicas deste perfil, prontas para o próximo post)`
 
-  const playbook = await callAI([{ role: 'user', content: prompt }], 1600)
+  const playbook = await callAI([{ role: 'user', content: prompt }], 2600)
 
   await lembrar('viral', 'playbook', playbook, 1.0)
   await lembrar('viral', 'playbook_meta', JSON.stringify({ n: linhas.length, calibracao: +calibr.toFixed(2), atualizadoEm: new Date().toISOString() }))

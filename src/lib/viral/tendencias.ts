@@ -101,6 +101,17 @@ export async function capturarTendencias(): Promise<{ fonte: string; geo: string
   return resumo
 }
 
+/** Top tendências "mais faladas" — ordenadas pela métrica de busca do Google (volume desc). */
+export async function topTendencias(n = 20, horas = 48) {
+  const t = await tendenciasRecentes(horas)
+  const seen = new Set<string>()
+  return t
+    .filter((x) => !seen.has(x.termo.toLowerCase()) && seen.add(x.termo.toLowerCase()))
+    .sort((a, b) => (b.rankOuScore ?? 0) - (a.rankOuScore ?? 0))
+    .slice(0, n)
+    .map((x) => ({ termo: x.termo, fonte: x.fonte, geo: x.geo, rankOuScore: x.rankOuScore, contexto: x.contexto }))
+}
+
 /** Tendências capturadas nas últimas N horas (default 48h) — para o analista/recomendador. */
 export async function tendenciasRecentes(horas = 48) {
   const desde = new Date(Date.now() - horas * 3600_000)
