@@ -9,6 +9,11 @@ out/
 .env
 .env.local
 .env.*.local
+.env.bak*
+.env.*
+# backups de .env e do banco (podem conter credenciais — NUNCA commitar)
+*.bak-*
+prisma/*.bak*
 
 # database
 prisma/dev.db

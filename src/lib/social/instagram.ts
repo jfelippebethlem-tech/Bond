@@ -30,12 +30,20 @@ export async function getInstagramPosts(igUserId: string, limit = 20) {
 }
 
 export async function getInstagramPostInsights(mediaId: string) {
-  const metrics = 'reach,impressions,engagement,saved,video_views'
-  const res = await fetch(igUrl(`/${mediaId}/insights`, `metric=${metrics}`))
-  if (!res.ok) return null
-  const data = await res.json()
-  if (!data.data) return null
-  return Object.fromEntries(data.data.map((m: { name: string; values: { value: number }[] }) => [m.name, m.values?.[0]?.value ?? 0]))
+  // Métricas válidas (2025+): 'impressions'/'engagement'/'video_views' foram depreciados;
+  // uma métrica inválida zera a chamada inteira. Tenta do conjunto rico ao mínimo.
+  const tentar = async (metrics: string) => {
+    const res = await fetch(igUrl(`/${mediaId}/insights`, `metric=${metrics}`))
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data.data) return null
+    return Object.fromEntries(data.data.map((m: { name: string; values: { value: number }[] }) => [m.name, m.values?.[0]?.value ?? 0]))
+  }
+  return (
+    (await tentar('reach,saved,likes,comments,shares,views,total_interactions')) ?? // reel/vídeo
+    (await tentar('reach,saved,likes,comments,shares,total_interactions')) ?? // foto/carrossel
+    (await tentar('reach,saved,shares')) // mínimo
+  )
 }
 
 export async function getInstagramComments(mediaId: string) {

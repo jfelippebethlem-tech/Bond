@@ -6,13 +6,15 @@
 
 import { PrismaClient } from '@prisma/client'
 import { processarJob, enqueueJob, lembrar, cicloAutonomo } from '../lib/hermes'
+import { analisarPostsPendentes } from '../lib/viral/analista'
 
 const prisma = new PrismaClient()
 
 const INTERVAL_JOBS = 30_000       // verifica jobs a cada 30s
 const INTERVAL_SCAN = 2 * 60_000   // escaneia novos dados a cada 2min
-const INTERVAL_DAILY = 60 * 60_000 // resumo diário a cada 1h
-const INTERVAL_AUTONOMO = 45 * 60_000 // ciclo autônomo (capta estado + age) a cada 45min
+const INTERVAL_DAILY = 24 * 60 * 60_000 // resumo diário 1x/dia (era 1h: gerava 24 resumos/dia)
+const INTERVAL_AUTONOMO = 2 * 60 * 60_000 // ciclo autônomo a cada 2h (era 45min: decisão é estável, economiza ~60% das chamadas)
+const INTERVAL_VIRAL = 6 * 60 * 60_000 // analista de viralização: posts novos sem score (no-op barato quando não há pendência)
 
 let lastScanDemandas: Date = new Date(0)
 let lastScanPosts: Date = new Date(0)
@@ -183,6 +185,16 @@ async function rodarCicloAutonomo() {
   }
 }
 
+// Analisa posts novos do IG sem análise de viralização (1× cada). Barato quando não há pendência.
+async function rodarAnalistaViral() {
+  try {
+    const r = await analisarPostsPendentes(30)
+    if (r.analisados) console.log(`[Hermes] 📊 Analista viral: ${r.analisados} post(s) novo(s) analisado(s)`)
+  } catch (err) {
+    console.error('[Hermes] Erro no analista viral:', err)
+  }
+}
+
 async function main() {
   await inicializar()
 
@@ -190,6 +202,7 @@ async function main() {
   setInterval(escanearNovosDados, INTERVAL_SCAN)
   setInterval(verificarResumoDiario, INTERVAL_DAILY)
   setInterval(rodarCicloAutonomo, INTERVAL_AUTONOMO)
+  setInterval(rodarAnalistaViral, INTERVAL_VIRAL)
 
   // Executa imediatamente na inicialização
   await escanearNovosDados()

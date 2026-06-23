@@ -21,6 +21,8 @@ import {
   analisarTopPosts, syncAll, gerarRelatorioSemanal,
 } from './bond'
 import { analisarPadroesCampanha, sugerirConteudoViral, analisarMelhoresHorarios } from './campanha'
+import { analisarPostViral, analisarPostsPendentes } from './viral/analista'
+import { aprenderPadroesVirais } from './viral/aprendizado'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Params = Record<string, any>
@@ -70,6 +72,28 @@ export const CATALOGO: Acao[] = [
     descricao: 'Mapa de calor: em quais horas e dias da semana os apoiadores mais engajam. Útil para escolher horário de postar/notificar.',
     categoria: 'apoiadores', seguranca: 'auto', parametros: {},
     executar: () => calcularHeatMap(30),
+  },
+
+  // ── ANALISTA DE VIRALIZAÇÃO (Gemini assiste a mídia + algoritmo do IG + tendências) ──
+  {
+    nome: 'analisar_post_viral',
+    descricao: 'Analisa UM post do Instagram: o Gemini assiste o reel/vê o carrossel/lê a legenda, pontua contra o algoritmo do IG e cruza com tendências, e diz por que (não) viralizou. Param: postId.',
+    categoria: 'conteudo', seguranca: 'auto',
+    parametros: { postId: 'id da mídia no Instagram (BondPost.postId)' },
+    executar: (p) => analisarPostViral(String(p.postId), !!p.forcar),
+  },
+  {
+    nome: 'analisar_posts_pendentes',
+    descricao: 'Analisa em lote os posts do Instagram ainda sem análise de viralização (backfill + dia a dia). Pacea para respeitar o free tier do Gemini. Param opcional: limite (padrão 100).',
+    categoria: 'conteudo', seguranca: 'auto',
+    parametros: { limite: 'quantos posts no máximo (opcional, padrão 100)' },
+    executar: (p) => analisarPostsPendentes(p.limite ?? 100),
+  },
+  {
+    nome: 'aprender_viral',
+    descricao: 'Inteligência progressiva: aprende com os resultados REAIS (sends/alcance) o que faz ESTE perfil viralizar, refina o playbook e calibra o próprio score. Roda meta-cognição. Quanto mais posts, mais esperto.',
+    categoria: 'conteudo', seguranca: 'auto', parametros: {},
+    executar: () => aprenderPadroesVirais(),
   },
 
   // ── CONTEÚDO / CAMPANHA ──

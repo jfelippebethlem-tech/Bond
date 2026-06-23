@@ -12,7 +12,7 @@ function forcarFree(model: string): string {
 }
 const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free')
 
-async function callAI(
+export async function callAI(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   maxTokens = 1024
 ): Promise<string> {

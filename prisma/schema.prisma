@@ -180,6 +180,7 @@ model BondPost {
   likes          Int      @default(0)
   comentarios    Int      @default(0)
   compartilhos   Int      @default(0)
+  saves          Int      @default(0)
   alcance        Int      @default(0)
   impressoes     Int      @default(0)
   engajamento    Float    @default(0)
@@ -316,4 +317,50 @@ model AcaoLog {
   sucesso   Boolean  @default(true)
   erro      String?
   criadoEm DateTime @default(now())
+}
+
+// ── Análise de viralização por post (Analista de Redes) ──
+// Uma linha por post analisado. Keyed pelo postId do IG (sem relação formal p/ não
+// migrar BondPost). camada 'A' = sem read_insights (sinais fracos); 'B' = com insights.
+model BondViralScore {
+  id            String   @id @default(cuid())
+  postId        String   @unique // BondPost.postId (id da mídia no IG)
+  superficie    String   // "reel" | "carrossel" | "feed" | "foto" | "video" | "story"
+  scoreTotal    Float    @default(0) // 0-100
+  sinais        String?  // JSON: { ganchoNota, ritmoNota, sendsPerReach?, savesPerReach?, ... }
+  diagnostico   String   // por que (não) viralizou — texto acionável
+  ganchoNota    Int?     // 0-10 (do Gemini assistindo a mídia)
+  temaEmAlta    Boolean  @default(false) // o tema casou com alguma tendência?
+  temaCasado    String?  // termo de tendência que casou, se houver
+  camada        String   @default("A") // "A" | "B"
+  conteudoResumo String? // resumo do que o Gemini viu na mídia
+  criadoEm      DateTime @default(now())
+
+  @@index([criadoEm])
+}
+
+// ── Relatório de análise (semanal / mensal / por post) gerado pela IA ──
+model BondRelatorio {
+  id        String   @id @default(cuid())
+  tipo      String   // "semana" | "mes" | "post"
+  titulo    String
+  periodo   String?  // ex "2026-06-16 a 2026-06-22" | "Junho/2026" | postId
+  prosa     String   // o relatório em prosa (sumário, acertos, erros, conclusões)
+  dados     String?  // JSON: estatísticas + lista de posts analisados
+  criadoEm  DateTime @default(now())
+
+  @@index([criadoEm])
+}
+
+// ── Snapshot de tendência externa (sensor grátis: Google Trends/News RSS) ──
+model BondTendencia {
+  id          String   @id @default(cuid())
+  termo       String
+  fonte       String   // "google_trends" | "google_news" | "youtube" | "x"
+  geo         String   @default("BR") // "BR" | "BR-RJ"
+  rankOuScore Float?   // posição/volume quando a fonte fornece
+  contexto    String?  // manchete/descrição associada
+  capturadoEm DateTime @default(now())
+
+  @@index([capturadoEm])
 }
