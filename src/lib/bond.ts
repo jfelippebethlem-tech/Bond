@@ -127,7 +127,7 @@ async function registrarInteracao(plataforma: string, externalId: string, tipo: 
       update: pub ? { publicadoEm: pub } : {},
       create: { plataforma, externalId, tipo, postId, publicadoEm: pub },
     })
-  } catch { /* duplicate on re-sync — ignore */ }
+  } catch (e) { if (!String(e).includes('Unique constraint')) console.error('[bond] registrarInteracao falhou:', e) }
 }
 
 async function salvarComentario(
@@ -282,6 +282,7 @@ export async function syncFacebook() {
         compartilhos: post.shares?.count ?? 0,
         alcance: insightMap['post_impressions_unique'] ?? 0,
         impressoes: insightMap['post_impressions'] ?? 0,
+        engajamento: calcEngagement(post.likes?.summary?.total_count, post.comments?.summary?.total_count, post.shares?.count, insightMap['post_impressions']),
         fasJson: JSON.stringify(allEngagers),
         sincronizadoEm: new Date(),
       },
@@ -373,8 +374,10 @@ export async function syncInstagram(limitPosts = 20) {
         likes: post.like_count ?? 0,
         comentarios: post.comments_count ?? 0,
         alcance: insights?.reach ?? 0,
-        impressoes: insights?.impressions ?? 0,
-        engajamento: insights?.engagement ?? calcEngagement(post.like_count, post.comments_count, 0, insights?.impressions),
+        impressoes: insights?.views ?? insights?.reach ?? 0,
+        compartilhos: insights?.shares ?? 0,
+        saves: insights?.saved ?? 0,
+        engajamento: calcEngagement(post.like_count, post.comments_count, insights?.shares ?? 0, insights?.reach),
         fasJson: JSON.stringify(commenters),
         sincronizadoEm: new Date(),
       },
@@ -388,8 +391,10 @@ export async function syncInstagram(limitPosts = 20) {
         likes: post.like_count ?? 0,
         comentarios: post.comments_count ?? 0,
         alcance: insights?.reach ?? 0,
-        impressoes: insights?.impressions ?? 0,
-        engajamento: insights?.engagement ?? calcEngagement(post.like_count, post.comments_count, 0, insights?.impressions),
+        impressoes: insights?.views ?? insights?.reach ?? 0,
+        compartilhos: insights?.shares ?? 0,
+        saves: insights?.saved ?? 0,
+        engajamento: calcEngagement(post.like_count, post.comments_count, insights?.shares ?? 0, insights?.reach),
         publicadoEm: new Date(post.timestamp),
         fasJson: JSON.stringify(commenters),
         perfilId: perfil.id,
@@ -399,7 +404,7 @@ export async function syncInstagram(limitPosts = 20) {
     for (const c of comments) {
       if (c.username) await upsertFa('instagram', c.username, c.username, c.username, 'comment')
       const cdt = c.timestamp ? new Date(c.timestamp) : undefined
-      await registrarInteracao('instagram', c.id, 'comment', post.id, cdt)
+      if (c.username) await registrarInteracao('instagram', c.username, 'comment', post.id, cdt)
       if (c.text) {
         await salvarComentario('instagram', post.id, c.id, c.username, c.id, c.text, cdt)
       }
@@ -409,7 +414,7 @@ export async function syncInstagram(limitPosts = 20) {
         if (!r.username) continue
         await upsertFa('instagram', r.username, r.username, r.username, 'comment')
         const rdt = r.timestamp ? new Date(r.timestamp) : undefined
-        await registrarInteracao('instagram', r.id, 'comment', post.id, rdt)
+        await registrarInteracao('instagram', r.username, 'comment', post.id, rdt)
         if (r.text) await salvarComentario('instagram', post.id, r.id, r.username, r.id, r.text, rdt)
       }
     }

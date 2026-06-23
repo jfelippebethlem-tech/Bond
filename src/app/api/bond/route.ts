@@ -97,6 +97,33 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(rascunhos)
   }
 
+  if (tipo === 'viral') {
+    const scores = await prisma.bondViralScore.findMany({ orderBy: { scoreTotal: 'desc' }, take: 100 })
+    const posts = await prisma.bondPost.findMany({
+      where: { postId: { in: scores.map((s) => s.postId) } },
+      select: { postId: true, conteudo: true, url: true, publicadoEm: true, likes: true, comentarios: true },
+    })
+    const byId = new Map(posts.map((p) => [p.postId, p]))
+    return NextResponse.json(scores.map((s) => ({ ...s, post: byId.get(s.postId) ?? null })))
+  }
+
+  if (tipo === 'playbook') {
+    const pb = await prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook' } } }).catch(() => null)
+    const meta = await prisma.hermesMemoria.findUnique({ where: { tipo_chave: { tipo: 'viral', chave: 'playbook_meta' } } }).catch(() => null)
+    return NextResponse.json({ playbook: pb?.conteudo || '', meta: meta?.conteudo ? JSON.parse(meta.conteudo) : null, atualizadoEm: pb?.atualizadoEm ?? null })
+  }
+
+  if (tipo === 'relatorios') {
+    const rels = await prisma.bondRelatorio.findMany({ orderBy: { criadoEm: 'desc' }, take: 40, select: { id: true, tipo: true, titulo: true, periodo: true, criadoEm: true } })
+    return NextResponse.json(rels)
+  }
+
+  if (tipo === 'relatorio') {
+    const id = searchParams.get('id') || ''
+    const rel = await prisma.bondRelatorio.findUnique({ where: { id } })
+    return NextResponse.json(rel ? { ...rel, dados: rel.dados ? JSON.parse(rel.dados) : null } : null)
+  }
+
   if (tipo === 'token_status') {
     const [fb, perfil] = await Promise.all([
       checkFacebookToken(),
@@ -296,6 +323,23 @@ export async function POST(req: NextRequest) {
   if (acao === 'analise_profunda') {
     const analise = await analiseProfunda()
     return NextResponse.json({ analise })
+  }
+
+  if (acao === 'analisar_viral') {
+    const { analisarPostsPendentes } = await import('@/lib/viral/analista')
+    const r = await analisarPostsPendentes(body.limite ?? 100)
+    return NextResponse.json(r)
+  }
+
+  if (acao === 'gerar_relatorio') {
+    const { gerarRelatorio } = await import('@/lib/viral/relatorio')
+    const r = await gerarRelatorio(body.periodoTipo, body.ref)
+    return NextResponse.json(r)
+  }
+
+  if (acao === 'aprender_viral') {
+    const { aprenderPadroesVirais } = await import('@/lib/viral/aprendizado')
+    return NextResponse.json(await aprenderPadroesVirais())
   }
 
   if (acao === 'analisar_top') {
