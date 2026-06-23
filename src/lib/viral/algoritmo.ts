@@ -62,11 +62,12 @@ const PESOS_ALGORITMO: Record<Superficie, Record<string, number>> = {
 
 // ─── Pesos da camada A (proxy de conteúdo — sem insights) ─────────────────────────
 // Gancho é o proxy nº1 de retenção; engajamento/seguidor é o termômetro público.
+// Loop 2 (2026-06): gancho subiu 0.35→0.42 — meta-cognição do Hermes + pesquisa (65% abandona nos 3s).
 const PESOS_PROXY: Record<string, number> = {
-  gancho: 0.35,
-  engRate: 0.25,
-  ritmo: 0.15,
-  qualidade: 0.1,
+  gancho: 0.42,
+  engRate: 0.22,
+  ritmo: 0.13,
+  qualidade: 0.08,
   temaEmAlta: 0.1,
   comentariosNorm: 0.05,
 }
