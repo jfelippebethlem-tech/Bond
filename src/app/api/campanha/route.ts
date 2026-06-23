@@ -13,6 +13,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(await analisarMelhoresHorarios())
   }
 
+  if (tipo === 'meta_ads') {
+    const { resumoMetaAds } = await import('@/lib/social/metaads')
+    return NextResponse.json(await resumoMetaAds(searchParams.get('periodo') || 'last_30d'))
+  }
+
   return NextResponse.json({ error: 'tipo inválido' }, { status: 400 })
 }
 

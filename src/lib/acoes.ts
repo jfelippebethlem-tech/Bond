@@ -23,6 +23,7 @@ import {
 import { analisarPadroesCampanha, sugerirConteudoViral, analisarMelhoresHorarios, gerarCalendarioSemanal } from './campanha'
 import { analisarPostViral, analisarPostsPendentes } from './viral/analista'
 import { aprenderPadroesVirais } from './viral/aprendizado'
+import { resumoMetaAds, metaAdsPorAnuncio } from './social/metaads'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Params = Record<string, any>
@@ -115,6 +116,13 @@ export const CATALOGO: Acao[] = [
     descricao: 'Monta o calendário da semana (7 dias × 3 ativações de rua prontas), cada uma colada numa tendência atual e na lei do perfil. Pronto para postar.',
     categoria: 'conteudo', seguranca: 'auto', parametros: {},
     executar: () => gerarCalendarioSemanal(),
+  },
+  {
+    nome: 'meta_ads_resumo',
+    descricao: 'Resumo dos anúncios pagos da Meta (gasto, alcance, custo por seguidor). DESLIGADO até configurar META_AD_ACCOUNT_ID + token com ads_read — então retorna "não configurado".',
+    categoria: 'redes', seguranca: 'auto',
+    parametros: { detalhe: 'se "por_anuncio", lista o desempenho por anúncio (opcional)' },
+    executar: (p) => (p.detalhe === 'por_anuncio' ? metaAdsPorAnuncio() : resumoMetaAds()),
   },
   {
     nome: 'melhores_horarios',
