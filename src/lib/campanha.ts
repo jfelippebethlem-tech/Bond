@@ -169,13 +169,14 @@ META SUGERIDA PARA 30 DIAS:
 export async function sugerirConteudoViral(tema?: string) {
   // 1) tendências FRESCAS do Google (RJ + BR) — o que está mais falado agora, por métrica de busca
   await capturarTendencias().catch(() => {})
-  const [trends, playbook, topPosts, horarios, arquetipos, formatos] = await Promise.all([
+  const [trends, playbook, topPosts, horarios, arquetipos, formatos, atomos] = await Promise.all([
     topTendencias(22, 72),
     playbookAtual(),
     prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, orderBy: { compartilhos: 'desc' }, take: 5 }),
     analisarMelhoresHorarios(),
     cerebroParaPrompt('gancho', 2), // arquétipos de gancho do segundo cérebro (curado pelo Claude)
     cerebroParaPrompt('formato', 1), // matriz de 8 formatos — varia o ângulo das 4 ideias
+    cerebroParaPrompt('átomo', 1), // content-atoms: 1 fato → N peças (carrossel/Reel/thread)
   ])
 
   const trendsTxt = trends.length
@@ -193,7 +194,7 @@ ${playbook ? playbook.slice(0, 1500) : 'send = dor econômica + indignação com
 POSTS QUE MAIS ESPALHARAM (tom de referência):
 ${topPosts.map((p) => `- 🔁${p.compartilhos} "${(p.conteudo || '').slice(0, 90)}"`).join('\n') || '(sem histórico)'}
 MELHOR HORÁRIO: ${horarios ? `${horarios.topHoras.map((h) => h.hora + 'h').join(', ')} | ${horarios.topDias.map((d) => d.dia).join(', ')}` : 'terça a quinta, 12h e 19h'}
-${arquetipos ? '\n' + arquetipos + '\n' : ''}${formatos ? '\n' + formatos + '\n' : ''}
+${arquetipos ? '\n' + arquetipos + '\n' : ''}${formatos ? '\n' + formatos + '\n' : ''}${atomos ? '\n' + atomos + '\n' : ''}
 
 Regras de criação:
 - A AÇÃO DE RUA é o coração. Seja CRIATIVO e CORAJOSO: stunts, provas visuais, confronto com o problema real (preço da cesta no mercado, fila do hospital, buraco/abandono na ZO, transporte). Nada de "grave um vídeo falando sobre" — proponha um GESTO concreto, num LOCAL concreto.
