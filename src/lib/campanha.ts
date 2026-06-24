@@ -2,6 +2,7 @@ import { prisma } from './db'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { capturarTendencias, topTendencias } from './viral/tendencias'
 import { playbookAtual } from './viral/aprendizado'
+import { cerebroParaPrompt } from './cerebro'
 
 async function campanhaAI(prompt: string, maxTokens = 1200): Promise<string> {
   if (!process.env.GEMINI_API_KEY) return 'Configure GEMINI_API_KEY.'
@@ -168,11 +169,12 @@ META SUGERIDA PARA 30 DIAS:
 export async function sugerirConteudoViral(tema?: string) {
   // 1) tendências FRESCAS do Google (RJ + BR) — o que está mais falado agora, por métrica de busca
   await capturarTendencias().catch(() => {})
-  const [trends, playbook, topPosts, horarios] = await Promise.all([
+  const [trends, playbook, topPosts, horarios, arquetipos] = await Promise.all([
     topTendencias(22, 72),
     playbookAtual(),
     prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, orderBy: { compartilhos: 'desc' }, take: 5 }),
     analisarMelhoresHorarios(),
+    cerebroParaPrompt('gancho', 2), // arquétipos de gancho do segundo cérebro (curado pelo Claude)
   ])
 
   const trendsTxt = trends.length
@@ -190,6 +192,7 @@ ${playbook ? playbook.slice(0, 1500) : 'send = dor econômica + indignação com
 POSTS QUE MAIS ESPALHARAM (tom de referência):
 ${topPosts.map((p) => `- 🔁${p.compartilhos} "${(p.conteudo || '').slice(0, 90)}"`).join('\n') || '(sem histórico)'}
 MELHOR HORÁRIO: ${horarios ? `${horarios.topHoras.map((h) => h.hora + 'h').join(', ')} | ${horarios.topDias.map((d) => d.dia).join(', ')}` : 'terça a quinta, 12h e 19h'}
+${arquetipos ? '\n' + arquetipos + '\n' : ''}
 
 Regras de criação:
 - A AÇÃO DE RUA é o coração. Seja CRIATIVO e CORAJOSO: stunts, provas visuais, confronto com o problema real (preço da cesta no mercado, fila do hospital, buraco/abandono na ZO, transporte). Nada de "grave um vídeo falando sobre" — proponha um GESTO concreto, num LOCAL concreto.
