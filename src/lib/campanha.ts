@@ -21,10 +21,12 @@ Responda SEMPRE em português do Brasil. Nunca use markdown com asteriscos.`,
   return result.response.text() ?? ''
 }
 
-// Score de potencial viral de um post (0-100)
+// Score de potencial viral de um post (0-100), camada-A (só métricas públicas, sem insights).
+// NÃO delega ao pontuarViral canônico de propósito: aquele exige sinais camada-B (sends/saves)
+// que este contexto de diagnóstico não tem — delegar zeraria todos os scores. Ver MOC-melhorias
+// Fase 1.2: unificar exige primeiro um modo camada-A no scorer canônico.
 function calcularPotencialViral(likes: number, comentarios: number, compartilhos: number, impressoes: number): number {
   if (!impressoes) return 0
-  const engRate = ((likes + comentarios + compartilhos) / impressoes) * 100
   // Compartilhos têm peso triplo no viral — são o maior multiplicador de alcance
   const viralScore = (compartilhos * 3 + comentarios * 2 + likes) / impressoes * 100
   return Math.min(100, Math.round(viralScore * 10))
