@@ -416,8 +416,7 @@ bot.on('message', async (msg) => {
     return
   }
 
-  // Mensagens do próprio dono que NÃO são comando: registra (p/ o assistente VER as respostas
-  // do dono — antes eram descartadas em silêncio) e NÃO viram "contato do gabinete".
+  // Texto livre do DONO (não-comando) → o Hermes (Yoda) RESPONDE, consultando o segundo cérebro.
   if (isOwner(msg)) {
     try {
       const dir = path.join(process.cwd(), 'data')
@@ -425,6 +424,18 @@ bot.on('message', async (msg) => {
       fs.appendFileSync(path.join(dir, 'owner_messages.jsonl'), JSON.stringify({ at: new Date().toISOString(), text }) + '\n')
     } catch { /* sem persistência não é fatal */ }
     console.log(`[DONO] ${text}`)
+    try {
+      await bot.sendChatAction(chatId, 'typing')
+      const { callAI } = await import('../lib/hermes')
+      const { cerebroParaPrompt } = await import('../lib/cerebro')
+      const cerebro = await cerebroParaPrompt(text, 6)
+      const sys = `Você é o Hermes (também chamado Yoda), o assistente de inteligência do Dep. Jorge Felippe Neto (PL/RJ — fiscalização e redes sociais). Responda DIRETO, útil e em português do Brasil. Use o SEGUNDO CÉREBRO abaixo quando for relevante. Regras: nunca invente número; indício não é acusação; seja honesto sobre o que não sabe.${cerebro ? `\n\nSEGUNDO CÉREBRO (conhecimento curado):\n${cerebro}` : ''}`
+      const resp = await callAI([{ role: 'system', content: sys }, { role: 'user', content: text }], 800)
+      await bot.sendMessage(chatId, (resp || '(sem resposta)').slice(0, 4000))
+    } catch (err) {
+      console.error('Erro na conversa do Hermes:', err)
+      await bot.sendMessage(chatId, '⚠️ Não consegui pensar agora. Tenta de novo?')
+    }
     return
   }
 
