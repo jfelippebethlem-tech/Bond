@@ -23,6 +23,7 @@ async function getDashboardData() {
     recentePosts,
     recentedemandas,
     recenteTelegram,
+    bondPlataformas,
   ] = await Promise.all([
     prisma.pessoa.count({ where: { ativo: true } }),
     prisma.pessoa.count({ where: { tipo: 'funcionario', ativo: true } }),
@@ -41,6 +42,7 @@ async function getDashboardData() {
       take: 5,
       orderBy: { criadoEm: 'desc' },
     }),
+    prisma.bondPost.groupBy({ by: ['plataforma'], _count: { _all: true } }),
   ])
 
   return {
@@ -54,6 +56,7 @@ async function getDashboardData() {
     recentePosts,
     recentedemandas,
     recenteTelegram,
+    bondPlataformas,
   }
 }
 
@@ -113,6 +116,31 @@ export default async function DashboardPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="card mb-8">
+        <div className="flex items-center gap-2 mb-4">
+          <Radio className="w-5 h-5 text-gray-400" />
+          <h2 className="font-semibold text-gray-900">Redes Sociais Conectadas</h2>
+        </div>
+        <div className="flex flex-wrap gap-4">
+          {([
+            { key: 'instagram', label: 'Instagram', color: 'bg-pink-500' },
+            { key: 'facebook', label: 'Facebook', color: 'bg-blue-600' },
+            { key: 'twitter', label: 'Twitter/X', color: 'bg-gray-800' },
+          ] as const).map((rede) => {
+            const n = data.bondPlataformas.find((p) => p.plataforma === rede.key)?._count._all ?? 0
+            return (
+              <div key={rede.key} className="flex items-center gap-2">
+                <span className={`w-2.5 h-2.5 rounded-full ${n > 0 ? rede.color : 'bg-gray-300'}`} />
+                <span className="text-sm text-gray-700">{rede.label}</span>
+                <span className="text-sm font-semibold text-gray-900">{n}</span>
+                <span className="text-xs text-gray-400">posts</span>
+                {n === 0 && <span className="text-xs text-gray-400">(não conectado)</span>}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

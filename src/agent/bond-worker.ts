@@ -261,6 +261,12 @@ async function main() {
   console.log('[Bond] ✓ Rodando. Próximo sync em 30min.\n')
 }
 
+// Um job de setInterval que rejeita gera unhandledRejection FORA do catch do main() →
+// Node derruba o worker e o pm2 reinicia em loop. Logar e seguir evita o crash-loop.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Bond] unhandledRejection (ignorado, worker segue):', reason)
+})
+
 main().catch(err => {
   console.error('[Bond] Erro fatal:', err)
   process.exit(1)

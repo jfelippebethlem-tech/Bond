@@ -210,6 +210,12 @@ async function main() {
   setTimeout(rodarCicloAutonomo, 120_000) // primeiro ciclo após 2min
 }
 
+// Um job de setInterval que rejeita gera unhandledRejection FORA do catch do main() →
+// Node derruba o worker e o pm2 reinicia em loop. Logar e seguir evita o crash-loop.
+process.on('unhandledRejection', (reason) => {
+  console.error('[Hermes] unhandledRejection (ignorado, worker segue):', reason)
+})
+
 main().catch((err) => {
   console.error('[Hermes] Erro fatal:', err)
   process.exit(1)
