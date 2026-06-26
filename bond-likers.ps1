@@ -11,6 +11,21 @@
 #  Se algo der errado, NÃO fecha sozinho e grava tudo em bond-likers-log.txt
 # ============================================================================
 param([switch]$Scheduled)  # -Scheduled = execucao automatica (agendador), nao pausa no fim
+
+# ---------------------------------------------------------------------------
+# DESATIVADO 2026-06-26 — o caminho AGENDADO vira no-op.
+# Este e o metodo ANTIGO/CAPADO (~100 curtidores) que SOBRESCREVIA o contrato de
+# producao (likers-sync) toda sexta via a tarefa Windows "BondLikersSemanal". Foi
+# substituido pela captura COMPLETA do dono (captura/capturar_producao.py, via poller
+# + cron do Hermes). A tarefa nao pode ser desabilitada por aqui (exige admin), entao
+# neutralizamos o script: o disparo agendado sai sem capturar e NAO toca no contrato.
+# Para reabilitar este metodo, remova este bloco. Detalhes em docs/LIMPEZA-2026-06-26.md
+if ($Scheduled) {
+    Write-Host "BondLikersSemanal: metodo capado DESATIVADO (ver docs/LIMPEZA-2026-06-26.md). Saindo sem capturar." -ForegroundColor Yellow
+    exit 0
+}
+# ---------------------------------------------------------------------------
+
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 try { Start-Transcript -Path (Join-Path $PSScriptRoot "bond-likers-log.txt") -Force | Out-Null } catch {}
