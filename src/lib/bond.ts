@@ -105,11 +105,20 @@ async function upsertFa(
   if (username) await vincularPessoa(plataforma, externalId, username)
 }
 
+// Handle normalizado: sem @, sem barra final, último segmento (se vier URL), minúsculo.
+function normHandle(h: string | null | undefined): string {
+  return (h ?? '').replace(/^@/, '').replace(/\/+$/, '').split('/').pop()!.trim().toLowerCase()
+}
+
 async function vincularPessoa(plataforma: string, externalId: string, username: string) {
-  const campo = plataforma === 'twitter' ? 'twitter' : plataforma === 'instagram' ? 'instagram' : 'facebook'
-  const pessoa = await prisma.pessoa.findFirst({
-    where: { [campo]: { contains: username } },
-  })
+  const campo: 'twitter' | 'instagram' | 'facebook' = plataforma === 'twitter' ? 'twitter' : plataforma === 'instagram' ? 'instagram' : 'facebook'
+  const alvo = normHandle(username)
+  if (!alvo) return
+  // Candidatos via contains (estreita no banco) e refina por IGUALDADE do handle normalizado.
+  // Antes era só `contains` → "ana" vinculava "joana"/"mariana" à pessoa errada. O equals direto
+  // quebraria por formatação (@, maiúscula, URL no cadastro), por isso normaliza dos dois lados.
+  const candidatos = await prisma.pessoa.findMany({ where: { [campo]: { contains: alvo } } })
+  const pessoa = candidatos.find((p) => normHandle(p[campo]) === alvo)
   if (pessoa) {
     await prisma.bondFa.updateMany({
       where: { plataforma, externalId, pessoaId: null },

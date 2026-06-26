@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { casaBusca } from '@/lib/texto'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -7,15 +8,13 @@ export async function GET(req: NextRequest) {
   const tipo = searchParams.get('tipo') ?? ''
 
   const pessoas = await prisma.pessoa.findMany({
-    where: {
-      ativo: true,
-      ...(search ? { nome: { contains: search } } : {}),
-      ...(tipo ? { tipo } : {}),
-    },
+    where: { ativo: true, ...(tipo ? { tipo } : {}) },
     orderBy: { nome: 'asc' },
   })
 
-  return NextResponse.json(pessoas)
+  // Busca por nome insensível a acento/caixa ("Jose" acha "José") — ver src/lib/texto.ts
+  const filtradas = search ? pessoas.filter((p) => casaBusca(p.nome, search)) : pessoas
+  return NextResponse.json(filtradas)
 }
 
 export async function POST(req: NextRequest) {

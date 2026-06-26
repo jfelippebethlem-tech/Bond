@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import Papa from 'papaparse'
+import { casaBusca } from '@/lib/texto'
 
 interface RowData {
   nome?: string
@@ -181,11 +182,10 @@ export async function GET(req: NextRequest) {
 
   const where = {
     ...(tipo ? { tipo } : { tipo: { in: ['cabo_eleitoral', 'coordenador'] } }),
-    ...(search ? { nome: { contains: search } } : {}),
     ativo: true,
   }
 
-  const cabos = await prisma.pessoa.findMany({
+  const todos = await prisma.pessoa.findMany({
     where,
     orderBy: { nome: 'asc' },
     include: {
@@ -194,6 +194,9 @@ export async function GET(req: NextRequest) {
       },
     },
   })
+
+  // Busca por nome insensível a acento/caixa — ver src/lib/texto.ts
+  const cabos = search ? todos.filter((c) => casaBusca(c.nome, search)) : todos
 
   return NextResponse.json(cabos.map(c => ({
     ...c,
