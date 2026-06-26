@@ -2,8 +2,8 @@
 # RUNNER DE PRODUÇÃO — captura de curtidores no DESKTOP (anti-ban), método exato (DOM-union).
 # Agenda (confirmada pelo dono):
 #   - roda todo dia, início aleatório 05:30–05:45, ciclos de ~1h (jitter ±10min), 5 posts/ciclo
-#   - ciclo 1: 2 dos 10 mais recentes (rotativo) + 3 antigos aleatórios
-#   - ciclo 2+: backlog antigo (mais antigos primeiro), sem repetir (ledger), até completar todos
+#   - ciclo 1: recentes pendentes + backlog antigo (mais antigos primeiro)
+#   - ciclo 2+: backlog antigo (mais antigos primeiro), sem repetir (só pendentes), até completar todos
 #   - Seg/Qui: prioridade aos 10 mais recentes (ciclos 1-2 cobrem os 10)
 #   - re-passe: só re-captura post cujo like_count (API) mudou desde a última vez
 #   - timing humano: abrir site, navegar, CADA scroll → aleatório 1–12s
@@ -11,7 +11,7 @@
 #     no OUT (Syncthing) + ledger. VM só ingere; captura é exclusiva daqui.
 # Uso teste (conta itsbernardof, isolado, até amanhã 08:00):
 #   IG_TESTE=1 IG_ATE="2026-06-23 08:00" python captura/capturar_producao.py
-import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib, base64
+import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib, base64, ctypes
 try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # console Windows é cp1252
 except Exception: pass
 
@@ -54,6 +54,17 @@ os.makedirs(OUT, exist_ok=True)
 def rand(a, b): return random.uniform(a, b)
 def humano(): return rand(1, 12)             # timing humano 1–12s (scroll/abrir/navegar)
 def now(): return datetime.datetime.now()
+
+# ---- manter a TELA acesa durante a captura ----
+# O Chrome headless=False PARA de renderizar/scrollar quando a tela apaga (DPMS) ou a janela
+# fica oculta/bloqueada → o gesto de scroll não move a página → falso "scroll_nao_avanca".
+# SetThreadExecutionState segura tela+sistema acordados enquanto o runner roda (Windows-only).
+ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
+def manter_acordado(on=True):
+    try:
+        flags = ES_CONTINUOUS | ((ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED) if on else 0)
+        ctypes.windll.kernel32.SetThreadExecutionState(flags)
+    except Exception: pass
 def log(msg):
     linha = f"{now():%Y-%m-%d %H:%M:%S} {msg}"
     print(linha, flush=True)
@@ -106,45 +117,54 @@ def registrar_ledger(rec):
     with open(LEDGER, "a", encoding="utf-8") as f:
         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
-def precisa_capturar(post, led):
-    # re-passe por delta: pula se já capturado e like_count não mudou
-    r = led.get(post["code"])
+def carregar_feitos():
+    # {code: rec} — última captura BEM-SUCEDIDA (ok=True) por post. Base do "já feito":
+    # falha/degradado NÃO conta (senão pularia post que nunca foi capturado de verdade).
+    feitos = {}
+    if os.path.exists(LEDGER):
+        for ln in open(LEDGER, encoding="utf-8", errors="replace"):
+            try: r = json.loads(ln)
+            except Exception: continue
+            if r.get("ok"): feitos[r["code"]] = r
+    return feitos
+
+def precisa_capturar(post, feitos):
+    # pendente se: nunca capturado com sucesso, OU like_count (API) mudou (re-passe por delta).
+    r = feitos.get(post["code"])
     if not r: return True
     return r.get("like_count") != post.get("like_count")
 
-# ---------- seleção do ciclo (cadência do dono) ----------
-# Cada disparo do cron = 1 run = 6–10 posts (aleatório), SEMPRE >=1 dos últimos 10 dias.
-# 6 runs/dia (1/h, 05h→10h). Seg/Qui: as 2 PRIMEIRAS runs focam recentes; as 4 restantes
-# aleatórias. A run se localiza pelo RELÓGIO (hora 5,6,7,8,9,10 -> índice 1..6).
+# ---------- seleção do ciclo (cadência do dono) — MONOTÔNICO, sem repetir ----------
+# Cada disparo do cron = 1 run = 6–10 posts. Seleciona SÓ pendentes (nunca capturado com
+# sucesso, OU like_count mudou desde a última = re-passe por delta). O backlog antigo vai do
+# MAIS ANTIGO p/ o mais novo → a cobertura xxx/total cresce de forma monotônica até FECHAR
+# (não re-sorteia o que já está feito). Toda run garante >=1 recente pendente (posts novos
+# cobertos rápido). Seg/Qui: as 2 primeiras runs focam os recentes pendentes. A run se
+# localiza pelo RELÓGIO (hora 5,6,7,8,9,10 -> índice 1..6).
 RUN_POR_HORA = {5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6}
 def _ts_post(p):
     s = p.get("timestamp") or ""
     try: return datetime.datetime.fromisoformat(s.replace("+0000", "+00:00")).replace(tzinfo=None)
     except Exception: return datetime.datetime.min
 
-def selecionar(posts, led, agora):
+def selecionar(posts, feitos, agora):
     n = random.randint(int(env("IG_MIN_POSTS", "6")), int(env("IG_MAX_POSTS", "10")))
     run_idx = RUN_POR_HORA.get(agora.hour, 0)                  # 0 = fora da janela (disparo manual)
-    # janela 05h–10h é toda no mesmo dia → bloco = hoje
-    bloco = agora.date()
-    seg_qui = bloco.weekday() in (0, 3)                        # Seg=0, Qui=3
+    seg_qui = agora.date().weekday() in (0, 3)                 # Seg=0, Qui=3 (janela 05h–10h = mesmo dia)
     recent_run = seg_qui and run_idx in (1, 2)                 # Seg/Qui: 2 primeiras runs = recentes
     limite = agora - datetime.timedelta(days=10)               # "últimos 10 dias"
-    recentes = [p for p in posts if _ts_post(p) >= limite]
-    antigos  = [p for p in posts if _ts_post(p) <  limite]
-    def rot(lst):                                             # menos-recentemente-capturado primeiro
-        return sorted(lst, key=lambda p: (led.get(p["code"], {}).get("quando") or ""))
+    pend = [p for p in posts if precisa_capturar(p, feitos)]   # SÓ pendentes (exclui já-capturado)
+    recentes = [p for p in pend if _ts_post(p) >= limite]      # já vêm mais-recente-primeiro (índice)
+    antigos  = [p for p in pend if _ts_post(p) <  limite]
+    antigos.sort(key=_ts_post)                                 # MAIS ANTIGOS PRIMEIRO (backlog monotônico)
     sel = []
-    if recent_run:                                           # foco nos recentes
-        sel = rot(recentes)[:n]
-        if len(sel) < n:                                     # completa com antigos se faltar
-            sel += [p for p in rot(antigos) if p not in sel][:n - len(sel)]
-    else:                                                    # run aleatória: SEMPRE 1 recente + resto aleatório
-        if recentes: sel.append(rot(recentes)[0])
-        pool = antigos[:]; random.shuffle(pool)
-        sel += [p for p in pool if p not in sel][:max(0, n - len(sel))]
-        if len(sel) < n:                                     # backlog acabou -> completa com recentes
-            sel += [p for p in rot(recentes) if p not in sel][:n - len(sel)]
+    if recent_run:                                            # Seg/Qui: cobre os recentes pendentes
+        sel = recentes[:n]
+    elif recentes:                                            # toda run: 1 recente pendente (o mais novo)
+        sel.append(recentes[0])
+    sel += [p for p in antigos if p not in sel][:max(0, n - len(sel))]   # backlog: do mais antigo
+    if len(sel) < n:                                          # backlog antigo acabou -> recentes restantes
+        sel += [p for p in recentes if p not in sel][:n - len(sel)]
     return sel[:n]
 
 # ---------- captura de 1 post — MÉTODO DONO (página /liked_by/, lista COMPLETA) ----------
@@ -326,6 +346,13 @@ async def rodar():
     posts = carregar_index()
     by_code = {p["code"]: p for p in posts}
     log(f"START runner | alvo=@{TARGET} | teste={TESTE} | OUT={OUT} | até={ATE} | {len(posts)} posts no índice")
+    manter_acordado(True)                          # segura tela+sistema acordados (anti-freeze do Chrome visível)
+    try:
+        await _rodar(posts, by_code)
+    finally:
+        manter_acordado(False)                     # libera o bloqueio de energia ao sair
+
+async def _rodar(posts, by_code):
     ciclo = 0
     while True:
         if ATE and now() >= ATE:
@@ -336,10 +363,13 @@ async def rodar():
             until = open(COOLDOWN_FILE, encoding="utf-8").read().strip()
             log(f"🧊 EM COOLDOWN (até {until}) — conta descansando 24h pós-bloqueio. Sem captura."); break
         led = carregar_ledger()
+        feitos = carregar_feitos()
+        pend_total = sum(1 for p in posts if precisa_capturar(p, feitos))
+        log(f"📊 progresso: {len(posts) - pend_total}/{len(posts)} posts capturados | faltam {pend_total}")
         if CODES and ciclo == 0:
             sel = [by_code[c] for c in CODES if c in by_code]
         else:
-            sel = selecionar(posts, led, now())
+            sel = selecionar(posts, feitos, now())
         sel = [p for p in sel if p]
         log(f"--- ciclo {ciclo} ({now():%a %H:%M}) | {len(sel)} posts: {[p['code'] for p in sel]} ---")
         if not sel:
@@ -353,7 +383,8 @@ async def rodar():
                 tab.add_handler(uc.cdp.network.LoadingFinished, _on_finished)
                 dono_ok = await esperar_dono(tab)
                 if not dono_ok: log("ciclo abortado: conta dona não ativa (sem captura p/ não regredir ao teto ~100).")
-                throttle = 0                              # nº de capturas degradadas seguidas (abort-on-bloqueio)
+                throttle = 0                              # degradações TIPO IG seguidas → cooldown 24h
+                freezes = 0                               # travadas LOCAIS seguidas (tela/janela) → aborta run, SEM cooldown
                 for post in (sel if dono_ok else []):
                     if ATE and now() >= ATE: break
                     if pausado(): log("⏸️ pausa detectada no meio do ciclo."); break
@@ -364,24 +395,32 @@ async def rodar():
                         users, status, motivo = None, f"erro:{str(e)[:60]}", "erro"
                     n = len(users) if users else 0
                     prev_n = (led.get(code) or {}).get("unicos")
-                    # GUARD anti-throttle: NÃO salvar captura degradada (senão corrompe o bom valor).
-                    # Degradado = scroll travou, OU n minúsculo p/ post com curtidas, OU colapso vs último.
-                    degradado = (status == "pausado" or motivo == "scroll_nao_avanca"
-                                 or (n <= 15 and (apilike or 0) > 30)
-                                 or (prev_n and prev_n > 40 and n < prev_n * 0.5))
-                    if users is None or degradado:
+                    # "scroll travou" = render/scroll do Chrome parou = TELA APAGADA / janela oculta = erro
+                    # LOCAL, NÃO bloqueio do IG (mantemos a tela acesa, mas é a rede de segurança).
+                    freeze_local = (motivo == "scroll_nao_avanca")
+                    # degradação TIPO IG: quase nada num post com curtidas, ou colapso vs último bom.
+                    degradado_ig = ((n <= 15 and (apilike or 0) > 30)
+                                    or (prev_n and prev_n > 40 and n < prev_n * 0.5))
+                    if users is None or status == "pausado" or freeze_local or degradado_ig:
+                        motivo_desc = "freeze_local" if freeze_local else ("degradado" if degradado_ig else status)
                         log(f"   {code}: DESCARTADO (n={n} motivo={motivo} status={status} prev={prev_n}) — NÃO salvo (preserva o bom)")
-                        registrar_ledger({"code": code, "ok": False, "status": ("degradado" if degradado else status), "n": n, "like_count": apilike, "target": TARGET})
-                        if status != "pausado":
-                            throttle += 1
-                            if throttle >= 2:
-                                log("🛑 BLOQUEIO: 2 capturas degradadas seguidas = conta throttled.")
-                                ativar_cooldown(24)   # kill-switch: descansa 24h
+                        registrar_ledger({"code": code, "ok": False, "status": motivo_desc, "n": n, "like_count": apilike, "target": TARGET})
+                        if status == "pausado":
+                            break
+                        if freeze_local:                  # erro LOCAL: NÃO conta como throttle, NÃO faz cooldown
+                            freezes += 1
+                            log("   ⚠️ scroll travou (provável TELA DESLIGADA / janela oculta) — erro LOCAL, sem cooldown.")
+                            if freezes >= 2:
+                                log("   🚪 2 travadas locais seguidas — encerrando a RUN (sem cooldown). Próxima cron tenta de novo.")
                                 break
-                        else:
+                            await asyncio.sleep(humano()); continue
+                        throttle += 1                     # só degradação TIPO IG chega aqui
+                        if throttle >= 2:
+                            log("🛑 BLOQUEIO: 2 capturas degradadas (tipo IG) seguidas = conta throttled.")
+                            ativar_cooldown(24)   # kill-switch: descansa 24h
                             break
                     else:
-                        throttle = 0
+                        throttle = 0; freezes = 0
                         nota = " ✓EXATO" if apilike == n else f" (api={apilike})"
                         log(f"   {code}: {n} curtidores{nota} | status={status}")
                         salvar_por_post(code, users)
