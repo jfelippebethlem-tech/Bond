@@ -4,9 +4,12 @@ import { useState, useEffect, useRef } from 'react'
 import {
   Users, Upload, Plus, Search, Twitter, Instagram, Facebook,
   Heart, MessageCircle, Share2, Trophy, Loader2, X, Check,
-  FileSpreadsheet, AlertCircle, ChevronDown, Phone, Star,
+  FileSpreadsheet, AlertCircle, ChevronDown, Phone, Sparkles, UserPlus,
 } from 'lucide-react'
 import { getNivel, getBadges, getProgressoNivel } from '@/lib/gamificacao'
+import Avatar from '@/components/ui/Avatar'
+
+type Sugerido = { externalId: string; username: string | null; nome: string | null; plataforma: string; totalLikes: number; totalComents: number; totalShares: number; score: number }
 
 type BondFaInfo = { id: string; plataforma: string; totalLikes: number; totalComents: number; totalShares: number }
 type Cabo = {
@@ -48,6 +51,8 @@ export default function CabosPage() {
   const [importResult, setImportResult] = useState<{ criados: number; atualizados: number; erros: number; detalhes?: string[] } | null>(null)
   const [saving, setSaving] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [sugeridos, setSugeridos] = useState<Sugerido[]>([])
+  const [promovendo, setPromovendo] = useState<string | null>(null)
 
   // Form state
   const [form, setForm] = useState({ nome: '', instagram: '', twitter: '', facebook: '', telefone: '', cargo: '', tipo: 'apoiador', observacoes: '', pessoaId: '' })
@@ -64,6 +69,28 @@ export default function CabosPage() {
   }
 
   useEffect(() => { loadCabos() }, [tipoFilter, search])
+
+  async function loadSugeridos() {
+    try {
+      const res = await fetch('/api/bond?tipo=engajadores_sugeridos')
+      const d = await res.json()
+      setSugeridos(Array.isArray(d.data) ? d.data : [])
+    } catch { /* */ }
+  }
+  useEffect(() => { loadSugeridos() }, [])
+
+  // Promove um engajador real a apoiador: cria a Pessoa com o handle e o backend vincula o BondFa.
+  async function promover(s: Sugerido) {
+    const handle = s.username || s.externalId
+    const campo = s.plataforma === 'twitter' ? 'twitter' : s.plataforma === 'facebook' ? 'facebook' : 'instagram'
+    setPromovendo(s.externalId)
+    try {
+      await fetch('/api/apoiadores', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: s.nome || handle, [campo]: handle, tipo: 'apoiador' }) })
+      setSugeridos((prev) => prev.filter((x) => x.externalId !== s.externalId))
+      loadCabos()
+    } catch { /* */ }
+    setPromovendo(null)
+  }
 
   async function handleImport(file: File) {
     setImporting(true)
@@ -172,6 +199,50 @@ export default function CabosPage() {
           <p className="text-2xl font-bold text-green-600 mt-1">{totalScore.toLocaleString('pt-BR')}</p>
         </div>
       </div>
+
+      {/* Engajadores reais sugeridos — vire apoiador em 1 clique */}
+      {sugeridos.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50/70 via-white to-purple-50/40 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-sm">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 leading-tight">Engajadores reais nas suas redes</h3>
+                <p className="text-xs text-gray-500">Quem mais interage e ainda não está na sua base — promova a apoiador em 1 clique</p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {sugeridos.map((s) => {
+              const nome = s.nome || s.username || s.externalId
+              return (
+                <div key={s.externalId} className="flex items-center gap-3 rounded-xl border border-gray-100 bg-white p-2.5 hover:border-indigo-200 hover:shadow-sm transition">
+                  <Avatar nome={nome} size={40} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{nome}</p>
+                    <div className="flex items-center gap-2 text-xs text-gray-500 mt-0.5">
+                      <span className="flex items-center gap-0.5 text-rose-500"><Heart className="w-3 h-3" />{s.totalLikes}</span>
+                      <span className="flex items-center gap-0.5 text-blue-500"><MessageCircle className="w-3 h-3" />{s.totalComents}</span>
+                      {s.totalShares > 0 && <span className="flex items-center gap-0.5 text-emerald-500"><Share2 className="w-3 h-3" />{s.totalShares}</span>}
+                      <span className="ml-auto font-semibold text-gray-700 tabular-nums">{s.score} pts</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => promover(s)}
+                    disabled={promovendo === s.externalId}
+                    title="Adicionar como apoiador"
+                    className="shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 transition"
+                  >
+                    {promovendo === s.externalId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Panel de Importação CSV */}
       {showImport && (

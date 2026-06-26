@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/db'
+import { handlesExcluidos, normUser } from '@/lib/filtros'
 import Link from 'next/link'
 import {
   Users,
@@ -54,13 +55,20 @@ async function getDashboardData() {
     prisma.bondInteracao.findMany({ where: filtro7, select: { externalId: true, tipo: true } }),
   ])
 
-  // Top engajadores da semana (lê os nomes em 1 query extra)
+  // Top engajadores da semana (exclui contas-sistema/mandato — ver src/lib/filtros.ts)
+  const excl = await handlesExcluidos()
   const porFa = new Map<string, number>()
-  for (const i of interacoes7) porFa.set(i.externalId, (porFa.get(i.externalId) ?? 0) + (i.tipo === 'comment' ? 2 : i.tipo === 'share' ? 3 : 1))
-  const topIds = Array.from(porFa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5)
+  for (const i of interacoes7) {
+    if (excl.has(normUser(i.externalId))) continue
+    porFa.set(i.externalId, (porFa.get(i.externalId) ?? 0) + (i.tipo === 'comment' ? 2 : i.tipo === 'share' ? 3 : 1))
+  }
+  const topIds = Array.from(porFa.entries()).sort((a, b) => b[1] - a[1]).slice(0, 12)
   const fas = topIds.length ? await prisma.bondFa.findMany({ where: { externalId: { in: topIds.map(([id]) => id) } }, select: { externalId: true, nome: true, username: true } }) : []
   const nomeDe = new Map(fas.map((f) => [f.externalId, f.nome || f.username || f.externalId]))
-  const topEngajadores = topIds.map(([id, score]) => ({ nome: String(nomeDe.get(id) || id), score }))
+  const topEngajadores = topIds
+    .map(([id, score]) => ({ nome: String(nomeDe.get(id) || id), username: fas.find((f) => f.externalId === id)?.username || id, score }))
+    .filter((e) => !excl.has(normUser(e.username)))
+    .slice(0, 6)
 
   return {
     totalPessoas, totalFuncionarios, totalApoiadores,

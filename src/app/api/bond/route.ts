@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { checkFacebookToken } from '@/lib/social/facebook'
 import { filtroPeriodo } from '@/lib/interacoes'
+import { handlesExcluidos, normUser } from '@/lib/filtros'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
   gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia, analiseProfunda,
@@ -58,13 +59,32 @@ export async function GET(req: NextRequest) {
 
   // Ranking de curtidores (importado do desktop). totalLikes vem do export do Leaderboard.
   if (tipo === 'curtidores') {
-    const itens = await prisma.bondFa.findMany({
+    const excl = await handlesExcluidos()
+    const itens = (await prisma.bondFa.findMany({
       where: { plataforma: 'instagram', totalLikes: { gt: 0 } },
       orderBy: { totalLikes: 'desc' },
-      take: 1000,
+      take: 1100,
       select: { username: true, nome: true, totalLikes: true, totalComents: true },
-    })
+    })).filter((f) => !excl.has(normUser(f.username))).slice(0, 1000)
     return NextResponse.json({ total: itens.length, data: itens })
+  }
+
+  // Engajadores REAIS sugeridos p/ virar apoiador/cabo (BondFa por score, ainda não vinculados a Pessoa).
+  if (tipo === 'engajadores_sugeridos') {
+    const excl = await handlesExcluidos()
+    const fas = await prisma.bondFa.findMany({
+      where: { pessoaId: null },
+      orderBy: [{ totalLikes: 'desc' }, { totalComents: 'desc' }],
+      take: 400,
+      select: { externalId: true, username: true, nome: true, plataforma: true, totalLikes: true, totalComents: true, totalShares: true },
+    })
+    const data = fas
+      .filter((f) => !excl.has(normUser(f.username)) && !excl.has(normUser(f.externalId)))
+      .map((f) => ({ ...f, score: f.totalLikes + f.totalComents * 2 + f.totalShares * 3 }))
+      .filter((f) => f.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 30)
+    return NextResponse.json({ total: data.length, data })
   }
 
   if (tipo === 'ranking_geral') {
@@ -226,12 +246,11 @@ export async function GET(req: NextRequest) {
     const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens }
 
     if (agrupar === 'pessoa') {
-      // Exclui as contas do PRÓPRIO mandato (respostas do dono não são "interação de apoiador").
-      const perfisDono = await prisma.bondPerfil.findMany({ select: { handle: true } })
-      const donoHandles = new Set(perfisDono.map((p) => (p.handle || '').toLowerCase()).filter(Boolean))
+      // Exclui contas do PRÓPRIO mandato + contas-sistema do IG (notifications etc.) — ver src/lib/filtros.ts
+      const excl = await handlesExcluidos()
       const byP = new Map<string, { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: Set<string>; posts: Set<string>; ultima: Date }>()
       for (const it of items) {
-        if (donoHandles.has((it.pessoa || '').toLowerCase())) continue
+        if (excl.has(normUser(it.pessoa))) continue
         const e = byP.get(it.pessoa) || { pessoa: it.pessoa, total: 0, like: 0, likeIG: 0, likeFB: 0, comment: 0, share: 0, plataformas: new Set<string>(), posts: new Set<string>(), ultima: it.data }
         e.total++
         if (it.tipo === 'like') { e.like++; if (it.plataforma === 'facebook') e.likeFB++; else if (it.plataforma === 'instagram') e.likeIG++ }
