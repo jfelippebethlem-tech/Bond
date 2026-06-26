@@ -53,6 +53,8 @@ captura/.env
 captura/shots
 parse/__pycache__/
 captura/__pycache__/
+# índice gerado dos posts (dado, ~1MB, muda; runner lê local)
+captura/posts-index.json
 
 # scratch de diagnóstico/teste da captura (logs, pngs, jsons, _test_*/_diag_*)
 captura/_*
