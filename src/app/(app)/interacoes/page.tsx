@@ -113,7 +113,7 @@ export default function InteracoesPage() {
   const Card = ({ icon, label, valor, cor }: { icon: React.ReactNode; label: string; valor: number; cor: string }) => (
     <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3 shadow-sm">
       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${cor}`}>{icon}</div>
-      <div><div className="text-xl font-bold text-gray-900 leading-none">{valor.toLocaleString('pt-BR')}</div><div className="text-xs text-gray-500 mt-0.5">{label}</div></div>
+      <div><div className="text-xl font-bold text-gray-900 leading-none tabular-nums">{valor.toLocaleString('pt-BR')}</div><div className="text-xs text-gray-500 mt-0.5">{label}</div></div>
     </div>
   )
 
@@ -179,6 +179,12 @@ export default function InteracoesPage() {
           {[anoAtual, anoAtual - 1, anoAtual - 2].map((a) => <option key={a} value={a}>{a}</option>)}
         </select>
       </div>
+      {(de || ate) && (
+        <p className="text-xs text-gray-400 -mt-1 mb-3 flex items-start gap-1.5">
+          <Activity size={12} className="text-gray-300 mt-0.5 shrink-0" />
+          <span>No período, <b className="font-medium text-gray-500">comentários</b> contam pela data real do comentário e <b className="font-medium text-gray-500">curtidas</b> pela data do post curtido. Interações sem data própria caem no período do post — nunca na data em que foram importadas.</span>
+        </p>
+      )}
 
       {/* Filtros */}
       <div className="flex flex-wrap items-center gap-2 mb-5 bg-gray-50 border border-gray-200 rounded-xl p-3">
@@ -214,7 +220,7 @@ export default function InteracoesPage() {
       ) : modo === 'pessoa' ? (
         <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide">
+            <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide sticky top-0 z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]">
               <tr><th className="px-3 py-3 text-center w-12">#</th><th className="px-4 py-3">Pessoa</th><th className="px-3 py-3 text-center whitespace-nowrap" title="Curtidas no Instagram (coletor do desktop)"><Heart size={13} className="text-rose-500 inline" /> IG</th><th className="px-3 py-3 text-center whitespace-nowrap" title="Curtidas no Facebook (exige permissão pages_read_user_content no token)"><Heart size={13} className="text-blue-500 inline" /> FB</th><th className="px-3 py-3 text-center" title="Comentários"><MessageCircle size={14} className="text-blue-500 inline" /></th><th className="px-3 py-3 text-center" title="Compartilhamentos"><Share2 size={14} className="text-green-600 inline" /></th><th className="px-3 py-3 text-center">Total</th><th className="px-3 py-3 text-center">Posts</th><th className="px-3 py-3">Redes</th><th className="px-3 py-3"></th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -222,12 +228,12 @@ export default function InteracoesPage() {
                 <tr key={p.pessoa} className="hover:bg-gray-50">
                   <td className={`px-3 py-2.5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-gray-400'}`}>{i + 1}º</td>
                   <td className="px-4 py-2.5 font-medium text-gray-900">{p.pessoa}</td>
-                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium">{p.likeIG || '—'}</td>
-                  <td className="px-3 py-2.5 text-center text-blue-700 font-medium">{p.likeFB || '—'}</td>
-                  <td className="px-3 py-2.5 text-center text-blue-600 font-medium">{p.comment || '—'}</td>
-                  <td className="px-3 py-2.5 text-center text-green-600 font-medium">{p.share || '—'}</td>
-                  <td className="px-3 py-2.5 text-center font-bold text-gray-900">{p.total}</td>
-                  <td className="px-3 py-2.5 text-center text-gray-500">{p.nPosts}</td>
+                  <td className="px-3 py-2.5 text-center text-rose-600 font-medium tabular-nums">{p.likeIG || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-blue-700 font-medium tabular-nums">{p.likeFB || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-blue-600 font-medium tabular-nums">{p.comment || '—'}</td>
+                  <td className="px-3 py-2.5 text-center text-green-600 font-medium tabular-nums">{p.share || '—'}</td>
+                  <td className="px-3 py-2.5 text-center font-bold text-gray-900 tabular-nums">{p.total.toLocaleString('pt-BR')}</td>
+                  <td className="px-3 py-2.5 text-center text-gray-500 tabular-nums">{p.nPosts}</td>
                   <td className="px-3 py-2.5">{p.plataformas.map((r) => <span key={r} className={`inline-block text-xs px-2 py-0.5 rounded mr-1 ${REDE(r)}`}>{r}</span>)}</td>
                   <td className="px-3 py-2.5 text-right">{p.comment > 0 && <button onClick={() => { setPessoa(p.pessoa); setTipo('comment'); setModo('lista') }} className="text-blue-600 hover:underline text-xs whitespace-nowrap">ver comentários →</button>}</td>
                 </tr>
@@ -239,7 +245,7 @@ export default function InteracoesPage() {
       ) : (
         <div className="overflow-x-auto border border-gray-200 rounded-xl bg-white">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide">
+            <thead className="bg-gray-50 text-gray-500 text-left text-xs uppercase tracking-wide sticky top-0 z-10 shadow-[0_1px_0_0_rgba(0,0,0,0.06)]">
               <tr><th className="px-4 py-3">Data</th><th className="px-3 py-3">Tipo</th><th className="px-3 py-3">Rede</th><th className="px-3 py-3">Pessoa</th><th className="px-4 py-3">Conteúdo</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
