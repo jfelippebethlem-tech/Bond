@@ -521,8 +521,13 @@ export async function gerarRankingCabos() {
 
 export async function gerarRankingSemanal() {
   const umaSemanaAtras = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+  // Bucketa pela data REAL da interação (publicadoEm); sem data → data do POST, nunca o
+  // criadoEm (hora do sync) — senão "ranking da semana" virava "o que foi sincronizado nos
+  // últimos 7 dias" e um lote importado contaminava o ranking inteiro (mesmo bug de /interações).
+  const dateW = { gte: umaSemanaAtras }
+  const codes = (await prisma.bondPost.findMany({ where: { publicadoEm: dateW }, select: { postId: true } })).map((p) => p.postId)
   const interacoes = await prisma.bondInteracao.findMany({
-    where: { criadoEm: { gte: umaSemanaAtras } },
+    where: { OR: [{ publicadoEm: dateW }, { publicadoEm: null, postId: { in: codes } }] },
   })
 
   const map = new Map<string, { plataforma: string; externalId: string; likes: number; comments: number; shares: number }>()

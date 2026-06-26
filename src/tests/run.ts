@@ -140,6 +140,29 @@ async function main() {
     await prisma.hermesJob.delete({ where: { id: j.id } })
   })
 
+  // ── 2.5 Interações — filtro de período (anti-vazamento) ──────────────────────
+  console.log('\n📅 Interações — filtro por data')
+
+  await test('filtroPeriodo bucketa por data real/post, nunca pelo ingest', async () => {
+    const { filtroPeriodo } = await import('@/lib/interacoes')
+    const de = '2026-06-15', ate = '2026-06-21'
+    const gte = new Date(de + 'T00:00:00'), lte = new Date(ate + 'T23:59:59')
+    const f = await filtroPeriodo(de, ate)
+    if (f === null) return // base sem dados Bond → nada a checar
+    // Posts publicados na janela (universo do fallback honesto)
+    const postsJanela = new Set((await prisma.bondPost.findMany({ where: { publicadoEm: { gte, lte } }, select: { postId: true } })).map((p) => p.postId))
+    // Todo comentário retornado deve ter data real na janela OU (sem data) pertencer a post da janela.
+    const got = await prisma.bondComentario.findMany({ where: f, select: { publicadoEm: true, postId: true } })
+    for (const c of got) {
+      const real = c.publicadoEm && c.publicadoEm >= gte && c.publicadoEm <= lte
+      const viaPost = !c.publicadoEm && postsJanela.has(c.postId)
+      assert(!!(real || viaPost), `Comentário fora da janela vazou (pub=${c.publicadoEm?.toISOString()}, post=${c.postId})`)
+    }
+    // Regressão: o fallback antigo (criadoEm) NÃO pode mais inflar a contagem.
+    const leakAntigo = await prisma.bondComentario.count({ where: { OR: [{ publicadoEm: { gte, lte } }, { publicadoEm: null, criadoEm: { gte, lte } }] } })
+    assert(got.length <= leakAntigo, `Filtro novo (${got.length}) deveria ser ≤ ao antigo (${leakAntigo})`)
+  })
+
   // ── 3. Autenticação JWT ──────────────────────────────────────────────────────
   console.log('\n🔐 Autenticação')
 

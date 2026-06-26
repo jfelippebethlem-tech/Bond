@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { checkFacebookToken } from '@/lib/social/facebook'
+import { filtroPeriodo } from '@/lib/interacoes'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
   gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia, analiseProfunda,
@@ -144,11 +145,12 @@ export async function GET(req: NextRequest) {
     if (de) dateW.gte = new Date(de + 'T00:00:00')
     if (ate) dateW.lte = new Date(ate + 'T23:59:59')
     const hasDate = !!(de || ate)
-    // Filtra pela data REAL (publicadoEm = created_time FB / timestamp IG). Linhas legadas (publicadoEm null)
-    // caem de volta no criadoEm (ingest). Antes filtrava só por criadoEm → a data era ignorada (bug 06-16).
-    const dataFiltro = hasDate ? { OR: [{ publicadoEm: dateW }, { publicadoEm: null, criadoEm: dateW }] } : null
+    // Filtra pela data REAL (publicadoEm). Linhas sem data caem na data do POST, nunca no
+    // criadoEm (hora do ingest) — ver src/lib/interacoes.ts. Corrige o vazamento em que um
+    // lote importado num dia aparecia inteiro no filtro daquela semana (bug 06-16).
+    const dataFiltro = await filtroPeriodo(de, ate)
 
-    type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date; postUrl?: string | null; postLegenda?: string | null }
+    type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date; dataReal?: boolean; postUrl?: string | null; postLegenda?: string | null }
     const items: Item[] = []
 
     // Comentários (têm autor + texto + post)
@@ -161,7 +163,9 @@ export async function GET(req: NextRequest) {
         },
         orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 500,
       })
-      for (const c of cs) items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.criadoEm })
+      // data exibida/ordenada = data REAL do comentário; sem ela, a data do post (resolvida no join
+      // abaixo); só em último caso o ingest. Antes mostrava sempre o criadoEm (ingest) — data errada na lista.
+      for (const c of cs) items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
     }
     // Likes/shares (BondInteracao; resolve a pessoa via externalId -> BondFa)
     if (!tipoInt || tipoInt === 'like' || tipoInt === 'share') {
@@ -186,19 +190,28 @@ export async function GET(req: NextRequest) {
     // (= BondPost.postId, o id da plataforma; NÃO o cuid). Anexa legenda curta + link clicável.
     const comPostIds = Array.from(new Set(items.filter((i) => i.tipo === 'comment' && i.postId).map((i) => i.postId)))
     if (comPostIds.length) {
-      const ps = await prisma.bondPost.findMany({ where: { postId: { in: comPostIds } }, select: { postId: true, url: true, conteudo: true } })
+      const ps = await prisma.bondPost.findMany({ where: { postId: { in: comPostIds } }, select: { postId: true, url: true, conteudo: true, publicadoEm: true } })
       const pmap = new Map(ps.map((p) => [p.postId, p]))
       for (const it of items) {
         if (it.tipo !== 'comment') continue
         const p = pmap.get(it.postId)
-        if (p) { it.postUrl = p.url; it.postLegenda = (p.conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 80) }
+        if (p) {
+          it.postUrl = p.url; it.postLegenda = (p.conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+          // comentário sem data real → usa a data do post (período correto, não o ingest)
+          if (!it.dataReal && p.publicadoEm) it.data = p.publicadoEm
+        }
       }
     }
     items.sort((a, b) => +new Date(b.data) - +new Date(a.data))
 
     // Stats PRECISOS (contagem real, não limitada pelo take das listas acima)
+    // Busca por pessoa: comentário casa por autor; curtida/share casa pelo externalId dos BondFa
+    // cujo nome/username bate (senão o card "Total" mostrava o nº GLOBAL de curtidas ao buscar alguém).
+    const intPessoaW = pessoa
+      ? { externalId: { in: (await prisma.bondFa.findMany({ where: { OR: [{ nome: { contains: pessoa } }, { username: { contains: pessoa } }] }, select: { externalId: true } })).map((f) => f.externalId) } }
+      : {}
     const comW = { ...(plataforma ? { plataforma } : {}), ...(dataFiltro ?? {}), ...(pessoa ? { autor: { contains: pessoa } } : {}) }
-    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(dataFiltro ?? {}) })
+    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(dataFiltro ?? {}), ...intPessoaW })
     const [nComment, nLike, nShare] = await Promise.all([
       !tipoInt || tipoInt === 'comment' ? prisma.bondComentario.count({ where: comW }) : Promise.resolve(0),
       !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),

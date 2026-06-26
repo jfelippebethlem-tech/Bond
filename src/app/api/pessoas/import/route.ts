@@ -20,7 +20,9 @@ function normalizeHandle(h?: string): string {
   return h.replace(/^@/, '').trim().toLowerCase()
 }
 
-// Após criar/atualizar Pessoa, vincula BondFa existentes que tiverem o mesmo handle
+// Após criar/atualizar Pessoa, vincula BondFa existentes que tiverem o mesmo handle.
+// Match EXATO (equals): usernames são gravados em minúsculas; `contains` pegava substring
+// ("ana" vinculava "joana", "mariana"…) e atribuía contas erradas à pessoa.
 async function vincularBondFas(pessoaId: string, instagram?: string, twitter?: string, facebook?: string) {
   const links: Promise<unknown>[] = []
 
@@ -28,7 +30,7 @@ async function vincularBondFas(pessoaId: string, instagram?: string, twitter?: s
     const ig = normalizeHandle(instagram)
     links.push(
       prisma.bondFa.updateMany({
-        where: { plataforma: 'instagram', username: { contains: ig }, pessoaId: null },
+        where: { plataforma: 'instagram', username: { equals: ig }, pessoaId: null },
         data: { pessoaId },
       })
     )
@@ -37,7 +39,7 @@ async function vincularBondFas(pessoaId: string, instagram?: string, twitter?: s
     const tw = normalizeHandle(twitter)
     links.push(
       prisma.bondFa.updateMany({
-        where: { plataforma: 'twitter', username: { contains: tw }, pessoaId: null },
+        where: { plataforma: 'twitter', username: { equals: tw }, pessoaId: null },
         data: { pessoaId },
       })
     )
@@ -46,7 +48,7 @@ async function vincularBondFas(pessoaId: string, instagram?: string, twitter?: s
     const fb = normalizeHandle(facebook)
     links.push(
       prisma.bondFa.updateMany({
-        where: { plataforma: 'facebook', username: { contains: fb }, pessoaId: null },
+        where: { plataforma: 'facebook', username: { equals: fb }, pessoaId: null },
         data: { pessoaId },
       })
     )

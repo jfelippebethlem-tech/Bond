@@ -64,10 +64,13 @@ export async function calcularMetricasApoiadores(dias = 30): Promise<MetricaApoi
   for (const p of posts) postPubMap.set(`${p.plataforma}:${p.postId}`, p.publicadoEm)
   const postIdsValidos = new Set(posts.map(p => `${p.plataforma}:${p.postId}`))
 
-  // Interações do período
+  // Interações do período: limita pelos POSTS da janela (postId), não pela hora de ingest
+  // (criadoEm). Antes, `criadoEm >= desde` excluía interação sincronizada antes da janela e
+  // deixava entrar lote importado recente — mesma classe do bug de /interações.
+  const codesPeriodo = posts.map(p => p.postId)
   const interacoes = await prisma.bondInteracao.findMany({
-    where: { criadoEm: { gte: desde } },
-    select: { plataforma: true, externalId: true, postId: true, criadoEm: true },
+    where: { postId: { in: codesPeriodo } },
+    select: { plataforma: true, externalId: true, postId: true, publicadoEm: true, criadoEm: true },
   })
 
   // Agrupa por externalId
