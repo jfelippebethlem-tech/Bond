@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { casaBusca } from '@/lib/texto'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -11,13 +12,14 @@ export async function GET(req: NextRequest) {
     where: {
       ...(status ? { status } : {}),
       ...(prioridade ? { prioridade } : {}),
-      ...(search ? { titulo: { contains: search } } : {}),
     },
     include: { pessoa: true, passos: { orderBy: { ordem: 'asc' } } },
     orderBy: { criadoEm: 'desc' },
   })
 
-  return NextResponse.json(demandas)
+  // Busca por título insensível a acento/caixa ("orcamento" acha "Orçamento") — ver src/lib/texto.ts
+  const filtradas = search ? demandas.filter((d) => casaBusca(d.titulo, search)) : demandas
+  return NextResponse.json(filtradas)
 }
 
 export async function POST(req: NextRequest) {
