@@ -6,27 +6,39 @@ import { getSessionFromRequest } from '@/lib/auth'
 // /api/ingest tem auth própria (token x-ingest-token), por isso fora da sessão.
 const publicPaths = ['/login', '/api/auth/login', '/guia-', '/privacidade', '/termos', '/exclusao-dados', '/guia-permissoes', '/api/ingest']
 
+// Headers de segurança aplicados a todas as respostas. CSP NAO incluida aqui de proposito:
+// uma policy errada quebra a app Next (estilos/scripts inline) — adicionar depois, testada.
+function comHeaders(res: NextResponse): NextResponse {
+  res.headers.set('X-Frame-Options', 'DENY')
+  res.headers.set('X-Content-Type-Options', 'nosniff')
+  res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
+  if (process.env.COOKIE_SECURE === 'true') {
+    res.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+  }
+  return res
+}
+
 export async function middleware(req: NextRequest) {
   const path = req.nextUrl.pathname
 
   if (publicPaths.some((p) => path.startsWith(p))) {
-    return NextResponse.next()
+    return comHeaders(NextResponse.next())
   }
 
   if (path.startsWith('/api/')) {
     const session = await getSessionFromRequest(req)
     if (!session) {
-      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+      return comHeaders(NextResponse.json({ error: 'Não autorizado' }, { status: 401 }))
     }
-    return NextResponse.next()
+    return comHeaders(NextResponse.next())
   }
 
   const session = await getSessionFromRequest(req)
   if (!session) {
-    return NextResponse.redirect(new URL('/login', req.url))
+    return comHeaders(NextResponse.redirect(new URL('/login', req.url)))
   }
 
-  return NextResponse.next()
+  return comHeaders(NextResponse.next())
 }
 
 export const config = {
