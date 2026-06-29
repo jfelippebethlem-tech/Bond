@@ -1,11 +1,34 @@
 # Captura de curtidores — Operação Autônoma (Hermes + poller)
 
-> Estado em 2026-06-23. Captura COMPLETA dos curtidores dos posts do dono
-> (@depjorgefelippeneto), rodando sozinha via Hermes no desktop, alimentando o
+> Estado em 2026-06-23 (atualizado 2026-06-29). Captura COMPLETA dos curtidores dos posts
+> do dono (@depjorgefelippeneto), rodando sozinha via Hermes no desktop, alimentando o
 > politimonitor. Este doc cobre **tudo**: método, fiação, cadência, segurança,
 > saídas, pendências e como operar.
 
 ---
+
+## Atualizações 2026-06-29
+- **Cadência ~80 posts/dia** divididos nas 6 runs (05–10h) — mantém 1 run/hora (espaçamento de
+  1h = melhor anti-ban) e captura ~12–15 posts por run (defaults `IG_MIN_POSTS=12`/`IG_MAX_POSTS=15`
+  em `selecionar()`). Cron **não** mudou.
+- **Keep-awake econômico** (`acordar_tela`/`apagar_tela` em `capturar_producao.py`): `ES_DISPLAY_REQUIRED`
+  só SEGURA a tela ligada, **não acorda uma já apagada** → antes do sweep cutuca input (mouse +1px e
+  tecla inerte F15) p/ LIGAR; no fim **apaga** a tela (economia) **só se ninguém usou o PC durante a run**
+  (gate via `GetLastInputInfo`, limiar 4 min). Com o dono presente, nada muda.
+- **Anti-freeze de janela oculta**: o Chrome para de renderizar/scrollar quando a janela fica atrás de
+  outras (occlusão nativa do Windows) — causava `freeze_local` parcial ao rodar com o PC em uso. Fix:
+  `uc.start(browser_args=[--disable-backgrounding-occluded-windows, --disable-renderer-backgrounding,
+  --disable-background-timer-throttling, --disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion])`
+  (o `--disable-features` tem que ser o ÚLTIMO e repetir o default do nodriver). Agora dá p/ rodar trabalhando.
+- **Watchdog `verificar-captura`** (cron Hermes `0 11 * * *`): guarda o nº de curtidores/posts e, se NÃO
+  mudar depois da janela, alerta "captura NÃO funcionou" (+ ledger 14h ok/freeze/degradado). Veredito em
+  `likers-sync/captura-verificacao.json` (sincroniza p/ VM/site); exit 2 no alerta. É a verificação oficial —
+  não precisa testar a tela na mão.
+- **Launcher manual no desktop**: `Bond - Rodar Captura.bat` (na Área de Trabalho) → `rodar-captura-manual.ps1`.
+  "Arma tudo" (perfil dono, produção, limpa lock de Chrome, pergunta nº de posts) e roda na hora.
+- **Limpeza pendente (cron)**: existe um job `captura-comando` **[paused]** duplicado (id `e2a11e0dbf80`,
+  cadência velha `33 5-12`, parado desde 22/06). Inerte (não dispara), mas causa ambiguidade de nome —
+  ao disparar manual use o ID do ativo `579bab506136`. Remover quando puder: `hermes cron rm e2a11e0dbf80`.
 
 ## 1. Método (como captura)
 Logado **COMO o dono** (perfil `C:\jfn\ig-profile-dono`), navega para
@@ -48,7 +71,7 @@ poller_captura.py  (executor, roda na sessão do usuário)
 
 ## 4. Cadência (regra do dono)
 - **6 runs/dia, 1 por hora, 05h→10h, 7 dias/semana.**
-- **6–10 posts por run** (aleatório), **sempre ≥1 post dos últimos 10 dias**.
+- **~12–15 posts por run** (aleatório; ~80/dia — ver Atualizações 2026-06-29), **sempre ≥1 post dos últimos 10 dias**.
 - **Seg/Qui**: as 2 primeiras runs (05h, 06h) focam os posts **recentes**; as 4 restantes
   são aleatórias (1 recente + resto do backlog).
 - Lógica em `selecionar()` (`capturar_producao.py`), localizada pelo relógio
@@ -98,5 +121,7 @@ poller_captura.py  (executor, roda na sessão do usuário)
 - `captura/poller_captura.py` — executor (lê comando do Hermes, roda o runner).
 - `captura/capturar_dono_runner.py` — runner manual dos N recentes (uso pontual).
 - `~/AppData/Local/hermes/scripts/comandar-captura.py` — commander do cron (escreve o comando).
+- `~/AppData/Local/hermes/scripts/verificar-captura.py` — watchdog do cron (11h); backup versionado em `captura/verificar-captura.py`.
+- `rodar-captura-manual.ps1` (raiz do repo) — lógica do launcher manual; chamado por `Bond - Rodar Captura.bat` (no desktop; backup versionado na raiz do repo).
 - `Startup\bond-poller.bat` — sobe o poller no logon.
 - Memória/handoff: `captura/HANDOFF-CAPTURA-OFICIAL.md`.

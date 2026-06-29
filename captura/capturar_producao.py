@@ -55,15 +55,51 @@ def rand(a, b): return random.uniform(a, b)
 def humano(): return rand(1, 12)             # timing humano 1–12s (scroll/abrir/navegar)
 def now(): return datetime.datetime.now()
 
-# ---- manter a TELA acesa durante a captura ----
+# ---- energia: acorda a TELA só p/ o sweep, segura durante, e apaga depois ----
 # O Chrome headless=False PARA de renderizar/scrollar quando a tela apaga (DPMS) ou a janela
 # fica oculta/bloqueada → o gesto de scroll não move a página → falso "scroll_nao_avanca".
-# SetThreadExecutionState segura tela+sistema acordados enquanto o runner roda (Windows-only).
+# Pegadinha do Windows: ES_DISPLAY_REQUIRED SEGURA a tela ligada, mas NÃO acorda uma já
+# apagada. Então: antes do sweep, cutucamos o input p/ LIGAR a tela; no fim, se ninguém usou
+# a máquina durante a run, APAGAMOS de volta (economia). Tudo Windows-only.
 ES_CONTINUOUS, ES_SYSTEM_REQUIRED, ES_DISPLAY_REQUIRED = 0x80000000, 0x00000001, 0x00000002
+IDLE_PRESENTE_S = 240   # <4min sem input = alguém usando → NÃO apaga a tela no fim
+
 def manter_acordado(on=True):
     try:
         flags = ES_CONTINUOUS | ((ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED) if on else 0)
         ctypes.windll.kernel32.SetThreadExecutionState(flags)
+    except Exception: pass
+
+def idle_s():
+    """segundos desde o último input humano (mouse/teclado). 0.0 se indisponível."""
+    try:
+        class _LII(ctypes.Structure):
+            _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+        lii = _LII(); lii.cbSize = ctypes.sizeof(lii)
+        if ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return max(0.0, (ctypes.windll.kernel32.GetTickCount() - lii.dwTime) / 1000.0)
+    except Exception: pass
+    return 0.0
+
+def acordar_tela(cutucar=True):
+    """LIGA a tela agora e segura ligada. ES_DISPLAY_REQUIRED não acorda display já apagado,
+    então (se cutucar) injeta input p/ tirar do DPMS-off: movimento de mouse de 1px (ida e
+    volta) + um toque de tecla inerte (F15). Dois canais = mais robusto entre máquinas."""
+    manter_acordado(True)
+    if cutucar:
+        try:
+            ctypes.windll.user32.mouse_event(0x0001, 0, 1, 0, 0)    # MOUSEEVENTF_MOVE +1px
+            ctypes.windll.user32.mouse_event(0x0001, 0, -1, 0, 0)   # volta -1px
+            ctypes.windll.user32.keybd_event(0x7E, 0, 0, 0)         # VK_F15 down (tecla inerte)
+            ctypes.windll.user32.keybd_event(0x7E, 0, 0x0002, 0)    # VK_F15 up (KEYEVENTF_KEYUP)
+        except Exception: pass
+
+def apagar_tela():
+    """APAGA a tela agora (economia) — WM_SYSCOMMAND SC_MONITORPOWER 2 (off), com timeout
+    p/ não travar se alguma janela não responder."""
+    try:
+        # HWND_BROADCAST=0xFFFF, WM_SYSCOMMAND=0x0112, SC_MONITORPOWER=0xF170, 2=off; SMTO_ABORTIFHUNG=0x0002
+        ctypes.windll.user32.SendMessageTimeoutW(0xFFFF, 0x0112, 0xF170, 2, 0x0002, 1500, None)
     except Exception: pass
 def log(msg):
     linha = f"{now():%Y-%m-%d %H:%M:%S} {msg}"
@@ -135,7 +171,7 @@ def precisa_capturar(post, feitos):
     return r.get("like_count") != post.get("like_count")
 
 # ---------- seleção do ciclo (cadência do dono) — MONOTÔNICO, sem repetir ----------
-# Cada disparo do cron = 1 run = 6–10 posts. Seleciona SÓ pendentes (nunca capturado com
+# Cada disparo do cron = 1 run = ~12–15 posts (~80/dia em 6 runs). Seleciona SÓ pendentes (nunca capturado com
 # sucesso, OU like_count mudou desde a última = re-passe por delta). O backlog antigo vai do
 # MAIS ANTIGO p/ o mais novo → a cobertura xxx/total cresce de forma monotônica até FECHAR
 # (não re-sorteia o que já está feito). Toda run garante >=1 recente pendente (posts novos
@@ -148,7 +184,8 @@ def _ts_post(p):
     except Exception: return datetime.datetime.min
 
 def selecionar(posts, feitos, agora):
-    n = random.randint(int(env("IG_MIN_POSTS", "6")), int(env("IG_MAX_POSTS", "10")))
+    # cadência do dono: ~80 posts/dia divididos nas 6 runs (05–10h) → ~12–15 por run (média ~13,5×6≈81).
+    n = random.randint(int(env("IG_MIN_POSTS", "12")), int(env("IG_MAX_POSTS", "15")))
     run_idx = RUN_POR_HORA.get(agora.hour, 0)                  # 0 = fora da janela (disparo manual)
     seg_qui = agora.date().weekday() in (0, 3)                 # Seg=0, Qui=3 (janela 05h–10h = mesmo dia)
     recent_run = seg_qui and run_idx in (1, 2)                 # Seg/Qui: 2 primeiras runs = recentes
@@ -346,11 +383,18 @@ async def rodar():
     posts = carregar_index()
     by_code = {p["code"]: p for p in posts}
     log(f"START runner | alvo=@{TARGET} | teste={TESTE} | OUT={OUT} | até={ATE} | {len(posts)} posts no índice")
-    manter_acordado(True)                          # segura tela+sistema acordados (anti-freeze do Chrome visível)
+    t_ini = time.time()
+    ausente = idle_s() >= IDLE_PRESENTE_S          # ninguém usando no início? (lê ANTES de cutucar)
+    acordar_tela(cutucar=ausente)                  # LIGA a tela e segura (cutuca só se estava apagada/ociosa)
+    if ausente: log("🔆 tela acordada p/ o sweep (máquina ociosa).")
     try:
         await _rodar(posts, by_code)
     finally:
         manter_acordado(False)                     # libera o bloqueio de energia ao sair
+        # apaga a tela SÓ se ninguém deu input humano durante a run (idle cobre quase toda a run)
+        if ausente and idle_s() >= min(IDLE_PRESENTE_S, time.time() - t_ini - 5):
+            log("💤 sem uso humano na run — apagando a tela (economia).")
+            apagar_tela()
 
 async def _rodar(posts, by_code):
     ciclo = 0
@@ -375,7 +419,17 @@ async def _rodar(posts, by_code):
         if not sel:
             log("nada pendente neste ciclo.");
         else:
-            browser = await uc.start(user_data_dir=PROFILE, headless=False)
+            # Flags anti-throttle: o Chrome PARA de renderizar/scrollar quando a janela fica
+            # OCULTA (atrás de outras) ou em background → era a causa do freeze ao rodar com o PC
+            # em uso. Estas mantêm a página rolando mesmo coberta, então dá p/ rodar trabalhando.
+            # OBS: o --disable-features precisa ser o ÚLTIMO (Chrome: última ocorrência vence) e
+            # repetir o default do nodriver (IsolateOrigins,site-per-process) p/ não perdê-lo.
+            browser = await uc.start(user_data_dir=PROFILE, headless=False, browser_args=[
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling",
+                "--disable-features=IsolateOrigins,site-per-process,CalculateNativeWinOcclusion",
+            ])
             try:
                 tab = await browser.get("https://www.instagram.com/"); await asyncio.sleep(humano())
                 await tab.send(uc.cdp.network.enable())
