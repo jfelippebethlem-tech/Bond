@@ -181,7 +181,10 @@ export async function GET(req: NextRequest) {
           ...(dataFiltro ?? {}),
           ...(pessoa ? { autor: { contains: pessoa } } : {}),
         },
-        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 500,
+        // Agrupando por pessoa: SEM teto — o agrupamento precisa de TODAS as linhas, senão um teto
+        // (era 8000) corta as interações mais antigas por ingest e some com pessoas/contagens que os
+        // cards (.count() exato) mostram. Na lista plana mantém 500. Ver diagnóstico do undercount.
+        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? undefined : 500,
       })
       // data exibida/ordenada = data REAL do comentário; sem ela, a data do post (resolvida no join
       // abaixo); só em último caso o ingest. Antes mostrava sempre o criadoEm (ingest) — data errada na lista.
@@ -195,7 +198,9 @@ export async function GET(req: NextRequest) {
           tipo: tipoInt && tipoInt !== 'comment' ? tipoInt : { in: ['like', 'share'] },
           ...(dataFiltro ?? {}),
         },
-        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? 8000 : 2000,
+        // Mesmo motivo: agrupando por pessoa, sem teto (eram 8000; havia 23.846 likes → 15.846 fora
+        // da contagem por pessoa). Lista plana mantém 2000.
+        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? undefined : 2000,
       })
       const exts = Array.from(new Set(is.map((i) => i.externalId)))
       const fas = exts.length ? await prisma.bondFa.findMany({ where: { externalId: { in: exts } } }) : []
@@ -237,13 +242,17 @@ export async function GET(req: NextRequest) {
       !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),
       !tipoInt || tipoInt === 'share' ? prisma.bondInteracao.count({ where: intW('share') }) : Promise.resolve(0),
     ])
-    // Curtidas AGREGADAS dos posts: o IG não revela QUEM curtiu, mas dá o total por post.
-    const aggLikes = await prisma.bondPost.aggregate({
-      _sum: { likes: true },
+    // Totais AGREGADOS dos posts (verdade da Meta): IG não revela QUEM curtiu/comentou em parte dos
+    // casos, mas o post traz o nº oficial (like_count / comments_count). Mesmo padrão p/ comentário:
+    // o card mostra o total real da Meta; o por-pessoa segue com os comentários IDENTIFICADOS (autor).
+    // Corrige a subcontagem de BondComentario (só grava se há texto/autor → ~14k Meta vs ~13,2k aqui).
+    const aggPost = await prisma.bondPost.aggregate({
+      _sum: { likes: true, comentarios: true },
       where: { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { publicadoEm: dateW } : {}) },
     })
-    const curtidasPostagens = aggLikes._sum.likes ?? 0
-    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens }
+    const curtidasPostagens = aggPost._sum.likes ?? 0
+    const comentariosPostagens = aggPost._sum.comentarios ?? 0
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, comentariosPostagens }
 
     if (agrupar === 'pessoa') {
       // Exclui contas do PRÓPRIO mandato + contas-sistema do IG (notifications etc.) — ver src/lib/filtros.ts

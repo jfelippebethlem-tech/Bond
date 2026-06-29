@@ -8,7 +8,7 @@ import {
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
 type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
-type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number }
+type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; comentariosPostagens?: number }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const REDE = (p: string) => ({ instagram: 'bg-pink-100 text-pink-700', facebook: 'bg-blue-100 text-blue-700', twitter: 'bg-sky-100 text-sky-700' }[p] || 'bg-gray-100 text-gray-600')
@@ -153,7 +153,7 @@ export default function InteracoesPage() {
         {(!pessoa && (!tipoInteracao || tipoInteracao === 'like')) && (
           <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas recebidas (nos posts)" valor={(stats.curtidasPostagens ?? 0) || stats.like} />
         )}
-        <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={stats.comment} />
+        <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={(!pessoa && (!tipoInteracao || tipoInteracao === 'comment') && (stats.comentariosPostagens ?? 0)) || stats.comment} />
         {plataforma !== 'instagram' && <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />}
       </div>
 
