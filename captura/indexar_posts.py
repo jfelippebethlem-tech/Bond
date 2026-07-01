@@ -4,7 +4,7 @@
 # <99 curtidas p/ validar a captura, e os posts das ultimas 2 semanas).
 import os, re, json, ssl, urllib.request, urllib.error, datetime
 
-ENV = r"C:\Users\socah\jfn\hermes-migracao\TODAS-as-chaves.env"
+ENV = os.environ.get("HERMES_KEYS_ENV", r"C:\Users\socah\jfn\hermes-migracao\TODAS-as-chaves.env")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "posts-index.json")
 GRAPH = "https://graph.facebook.com/v21.0"
 CTX = ssl.create_default_context(); CTX.check_hostname = False; CTX.verify_mode = ssl.CERT_NONE
@@ -16,8 +16,13 @@ def load_env(p):
         m = re.match(r'^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$', ln)
         if m: d[m.group(1)] = m.group(2).strip().strip('"').strip("'")
     return d
-E = load_env(ENV)
-TOKEN = E["FACEBOOK_PAGE_TOKEN"]; IGID = E["INSTAGRAM_BUSINESS_ID"]
+E = load_env(ENV) if os.path.exists(ENV) else {}
+# Aceita as chaves do ARQUIVO ou do AMBIENTE (o poller já injeta o env com os tokens) — assim o
+# reindex automático roda mesmo se o caminho do arquivo mudar de máquina. Falha honesta se faltar.
+TOKEN = E.get("FACEBOOK_PAGE_TOKEN") or os.environ.get("FACEBOOK_PAGE_TOKEN")
+IGID  = E.get("INSTAGRAM_BUSINESS_ID") or os.environ.get("INSTAGRAM_BUSINESS_ID")
+if not TOKEN or not IGID:
+    raise SystemExit("indexar_posts: faltam FACEBOOK_PAGE_TOKEN / INSTAGRAM_BUSINESS_ID (arquivo de chaves ou env)")
 
 def get(url):
     req = urllib.request.Request(url, headers={"User-Agent": UA})

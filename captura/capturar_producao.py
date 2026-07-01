@@ -11,7 +11,7 @@
 #     no OUT (Syncthing) + ledger. VM só ingere; captura é exclusiva daqui.
 # Uso teste (conta itsbernardof, isolado, até amanhã 08:00):
 #   IG_TESTE=1 IG_ATE="2026-06-23 08:00" python captura/capturar_producao.py
-import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib, base64, ctypes
+import os, sys, json, re, time, random, asyncio, datetime, struct, hashlib, base64, ctypes, subprocess
 try: sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # console Windows é cp1252
 except Exception: pass
 
@@ -132,6 +132,25 @@ def ativar_cooldown(horas=24):
     return until
 
 # ---------- índice + ledger ----------
+INDEXADOR = os.path.join(HERE, "indexar_posts.py")
+def refrescar_index():
+    # AUTO-DESCOBERTA: reindexa os posts via Graph API (HTTP puro, SEM browser) ANTES de cada run,
+    # p/ que selecionar() enxergue os posts NOVOS automaticamente — sem depender de IG_CODES manual.
+    # Era a causa da defasagem: índice parado numa data antiga => semana recente com 0 curtidores.
+    # Degrada HONESTO: se falhar (token/rede), segue com o índice anterior; NUNCA bloqueia a captura.
+    if env("IG_REINDEX", "1") != "1":
+        return
+    try:
+        r = subprocess.run([sys.executable, INDEXADOR], cwd=HERE, capture_output=True, text=True,
+                           timeout=int(env("IG_REINDEX_TIMEOUT", "120")))
+        if r.returncode == 0:
+            linhas = [l for l in (r.stdout or "").strip().splitlines() if l.strip()]
+            log("🔎 índice atualizado (Graph API): " + (linhas[-1] if linhas else "ok"))
+        else:
+            log(f"⚠️ reindex falhou (rc={r.returncode}) — sigo com o índice anterior: {((r.stderr or r.stdout) or '').strip()[:200]}")
+    except Exception as e:
+        log(f"⚠️ reindex indisponível ({str(e)[:120]}) — sigo com o índice anterior.")
+
 def carregar_index():
     d = json.load(open(IDX, encoding="utf-8"))
     posts = d.get("posts", [])
@@ -380,6 +399,7 @@ def salvar_por_post(code, users):
 
 # ---------- loop principal ----------
 async def rodar():
+    refrescar_index()          # AUTO-DESCOBERTA: atualiza o índice (Graph API) antes de ler
     posts = carregar_index()
     by_code = {p["code"]: p for p in posts}
     log(f"START runner | alvo=@{TARGET} | teste={TESTE} | OUT={OUT} | até={ATE} | {len(posts)} posts no índice")
