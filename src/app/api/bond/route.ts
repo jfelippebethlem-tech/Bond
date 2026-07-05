@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { checkFacebookToken } from '@/lib/social/facebook'
 import { filtroPeriodo } from '@/lib/interacoes'
 import { handlesExcluidos, normUser } from '@/lib/filtros'
+import { normalizar } from '@/lib/texto'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
   gerarSugestaoConteudo, chatComBond, analisarTopPosts, analisarAudiencia, analiseProfunda,
@@ -156,7 +157,10 @@ export async function GET(req: NextRequest) {
   if (tipo === 'interacoes') {
     const plataforma = searchParams.get('plataforma') || undefined
     const tipoInt = searchParams.get('tipoInteracao') || undefined // comment | like | share
-    const pessoa = (searchParams.get('pessoa') || '').trim().toLowerCase()
+    // Busca de pessoa insensível a CAIXA e ACENTO (normalizar, o mesmo de Pessoas/Demandas): o
+    // contains do SQLite é sensível a acento, então "vila uniao" não achava "Vila União". O match
+    // roda em memória — e por isso, com busca ativa, as queries abaixo vêm SEM teto (carregarTudo).
+    const pessoa = normalizar(searchParams.get('pessoa') || '')
     const de = searchParams.get('de')
     const ate = searchParams.get('ate')
     const agrupar = searchParams.get('agrupar') // 'pessoa' | null
@@ -169,6 +173,10 @@ export async function GET(req: NextRequest) {
     // criadoEm (hora do ingest) — ver src/lib/interacoes.ts. Corrige o vazamento em que um
     // lote importado num dia aparecia inteiro no filtro daquela semana (bug 06-16).
     const dataFiltro = await filtroPeriodo(de, ate)
+    // Sem teto quando: agrupa por pessoa (precisa de TODAS as linhas — teto de 8000 sumia com gente
+    // que os cards exatos mostravam) OU há busca de pessoa (o match acento-insensível roda em
+    // memória DEPOIS da query; com teto, a busca via JS perdia linhas antigas — card 528 × lista 1).
+    const carregarTudo = agrupar === 'pessoa' || !!pessoa
 
     type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date; dataReal?: boolean; postUrl?: string | null; postLegenda?: string | null }
     const items: Item[] = []
@@ -179,16 +187,17 @@ export async function GET(req: NextRequest) {
         where: {
           ...(plataforma ? { plataforma } : {}),
           ...(dataFiltro ?? {}),
-          ...(pessoa ? { autor: { contains: pessoa } } : {}),
         },
-        // Agrupando por pessoa: SEM teto — o agrupamento precisa de TODAS as linhas, senão um teto
-        // (era 8000) corta as interações mais antigas por ingest e some com pessoas/contagens que os
-        // cards (.count() exato) mostram. Na lista plana mantém 500. Ver diagnóstico do undercount.
-        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? undefined : 500,
+        // Lista plana: os 500 mais recentes pela data REAL do comentário — não pelo criadoEm, que
+        // é a hora do INGEST (o re-import deixa todos iguais e a ordem virava loteria).
+        orderBy: { publicadoEm: { sort: 'desc', nulls: 'last' } }, take: carregarTudo ? undefined : 500,
       })
       // data exibida/ordenada = data REAL do comentário; sem ela, a data do post (resolvida no join
       // abaixo); só em último caso o ingest. Antes mostrava sempre o criadoEm (ingest) — data errada na lista.
-      for (const c of cs) items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
+      for (const c of cs) {
+        if (pessoa && !normalizar(c.autor || c.autorId).includes(pessoa)) continue
+        items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
+      }
     }
     // Likes/shares (BondInteracao; resolve a pessoa via externalId -> BondFa)
     if (!tipoInt || tipoInt === 'like' || tipoInt === 'share') {
@@ -198,16 +207,14 @@ export async function GET(req: NextRequest) {
           tipo: tipoInt && tipoInt !== 'comment' ? tipoInt : { in: ['like', 'share'] },
           ...(dataFiltro ?? {}),
         },
-        // Mesmo motivo: agrupando por pessoa, sem teto (eram 8000; havia 23.846 likes → 15.846 fora
-        // da contagem por pessoa). Lista plana mantém 2000.
-        orderBy: { criadoEm: 'desc' }, take: agrupar === 'pessoa' ? undefined : 2000,
+        orderBy: { publicadoEm: { sort: 'desc', nulls: 'last' } }, take: carregarTudo ? undefined : 2000,
       })
       const exts = Array.from(new Set(is.map((i) => i.externalId)))
       const fas = exts.length ? await prisma.bondFa.findMany({ where: { externalId: { in: exts } } }) : []
       const nameOf = new Map(fas.map((f) => [f.externalId, f.nome || f.username || f.externalId]))
       for (const i of is) {
         const nome = String(nameOf.get(i.externalId) || i.externalId)
-        if (pessoa && !nome.toLowerCase().includes(pessoa)) continue
+        if (pessoa && !normalizar(nome).includes(pessoa) && !normalizar(i.externalId).includes(pessoa)) continue
         items.push({ id: i.id, tipo: i.tipo, plataforma: i.plataforma, pessoa: nome, texto: null, postId: i.postId, data: i.publicadoEm ?? i.criadoEm })
       }
     }
@@ -227,32 +234,52 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+    // Likes de IG guardam o SHORTCODE do post (coletor do desktop); BondPost.postId é o media ID
+    // da Graph API — o join direto nunca casa. Casa pela URL do post (…/p|reel|tv/<shortcode>/),
+    // que o BondPost sempre tem. São ~centenas de posts: carregar todos é barato.
+    if (items.some((i) => i.tipo !== 'comment' && i.postId)) {
+      const ps = await prisma.bondPost.findMany({ where: { plataforma: 'instagram' }, select: { postId: true, url: true, conteudo: true } })
+      const byCode = new Map<string, (typeof ps)[number]>()
+      for (const p of ps) { const m = (p.url || '').match(/\/(?:p|reel|tv)\/([A-Za-z0-9_-]+)/); if (m) byCode.set(m[1], p) }
+      for (const it of items) {
+        if (it.tipo === 'comment') continue
+        const p = byCode.get(it.postId)
+        if (p) { it.postUrl = p.url; it.postLegenda = (p.conteudo || '').replace(/\s+/g, ' ').trim().slice(0, 80) }
+      }
+    }
     items.sort((a, b) => +new Date(b.data) - +new Date(a.data))
 
-    // Stats PRECISOS (contagem real, não limitada pelo take das listas acima)
-    // Busca por pessoa: comentário casa por autor; curtida/share casa pelo externalId dos BondFa
-    // cujo nome/username bate (senão o card "Total" mostrava o nº GLOBAL de curtidas ao buscar alguém).
-    const intPessoaW = pessoa
-      ? { externalId: { in: (await prisma.bondFa.findMany({ where: { OR: [{ nome: { contains: pessoa } }, { username: { contains: pessoa } }] }, select: { externalId: true } })).map((f) => f.externalId) } }
-      : {}
-    const comW = { ...(plataforma ? { plataforma } : {}), ...(dataFiltro ?? {}), ...(pessoa ? { autor: { contains: pessoa } } : {}) }
-    const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(dataFiltro ?? {}), ...intPessoaW })
-    const [nComment, nLike, nShare] = await Promise.all([
-      !tipoInt || tipoInt === 'comment' ? prisma.bondComentario.count({ where: comW }) : Promise.resolve(0),
-      !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),
-      !tipoInt || tipoInt === 'share' ? prisma.bondInteracao.count({ where: intW('share') }) : Promise.resolve(0),
-    ])
+    // Stats PRECISOS. Sem busca: count() exato no banco. Com busca de pessoa: conta os items — que
+    // vieram SEM teto (carregarTudo) e filtrados com normalizar(), o único jeito de o card bater
+    // com a tabela sendo insensível a acento (o contains do SQLite não é).
+    let nComment = 0, nLike = 0, nShare = 0
+    if (pessoa) {
+      for (const it of items) { if (it.tipo === 'comment') nComment++; else if (it.tipo === 'like') nLike++; else nShare++ }
+    } else {
+      const comW = { ...(plataforma ? { plataforma } : {}), ...(dataFiltro ?? {}) }
+      const intW = (t: string) => ({ ...(plataforma ? { plataforma } : {}), tipo: t, ...(dataFiltro ?? {}) })
+      ;[nComment, nLike, nShare] = await Promise.all([
+        !tipoInt || tipoInt === 'comment' ? prisma.bondComentario.count({ where: comW }) : Promise.resolve(0),
+        !tipoInt || tipoInt === 'like' ? prisma.bondInteracao.count({ where: intW('like') }) : Promise.resolve(0),
+        !tipoInt || tipoInt === 'share' ? prisma.bondInteracao.count({ where: intW('share') }) : Promise.resolve(0),
+      ])
+    }
     // Totais AGREGADOS dos posts (verdade da Meta): IG não revela QUEM curtiu/comentou em parte dos
     // casos, mas o post traz o nº oficial (like_count / comments_count). Mesmo padrão p/ comentário:
     // o card mostra o total real da Meta; o por-pessoa segue com os comentários IDENTIFICADOS (autor).
     // Corrige a subcontagem de BondComentario (só grava se há texto/autor → ~14k Meta vs ~13,2k aqui).
-    const aggPost = await prisma.bondPost.aggregate({
-      _sum: { likes: true, comentarios: true },
-      where: { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { publicadoEm: dateW } : {}) },
-    })
+    const [aggPost, aggLike] = await Promise.all([
+      prisma.bondPost.aggregate({
+        _sum: { likes: true, comentarios: true },
+        where: { ...(plataforma ? { plataforma } : {}), ...(hasDate ? { publicadoEm: dateW } : {}) },
+      }),
+      // Data do post mais novo COM curtidores capturados — mostra na tela até quando a captura do
+      // desktop chegou (parada = filtros recentes zerados por falta de dado, não por bug).
+      prisma.bondInteracao.aggregate({ _max: { publicadoEm: true }, where: { tipo: 'like', plataforma: 'instagram' } }),
+    ])
     const curtidasPostagens = aggPost._sum.likes ?? 0
     const comentariosPostagens = aggPost._sum.comentarios ?? 0
-    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, comentariosPostagens }
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, comentariosPostagens, ultimaCapturaLike: aggLike._max.publicadoEm }
 
     if (agrupar === 'pessoa') {
       // Exclui contas do PRÓPRIO mandato + contas-sistema do IG (notifications etc.) — ver src/lib/filtros.ts

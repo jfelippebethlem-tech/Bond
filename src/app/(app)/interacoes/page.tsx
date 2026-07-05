@@ -8,7 +8,7 @@ import {
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
 type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
-type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; comentariosPostagens?: number }
+type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; comentariosPostagens?: number; ultimaCapturaLike?: string | null }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const REDE = (p: string) => ({ instagram: 'bg-pink-100 text-pink-700', facebook: 'bg-blue-100 text-blue-700', twitter: 'bg-sky-100 text-sky-700' }[p] || 'bg-gray-100 text-gray-600')
@@ -183,6 +183,16 @@ export default function InteracoesPage() {
         <p className="text-xs text-gray-400 -mt-1 mb-3 flex items-start gap-1.5">
           <Activity size={12} className="text-gray-300 mt-0.5 shrink-0" />
           <span>No período, <b className="font-medium text-gray-500">comentários</b> contam pela data real do comentário e <b className="font-medium text-gray-500">curtidas</b> pela data do post curtido. Interações sem data própria caem no período do post — nunca na data em que foram importadas.</span>
+        </p>
+      )}
+
+      {/* Cobertura honesta dos curtidores: identificamos QUEM curtiu só nos posts que o coletor do
+          desktop capturou. Num período recente sem captura, o "por pessoa" mostra poucas/nenhuma curtida
+          embora a Meta registre o total — deixamos explícito que é CAPTURA pendente, não o filtro quebrado. */}
+      {(de || ate) && (!tipoInteracao || tipoInteracao === 'like') && (stats.curtidasPostagens ?? 0) > stats.like && (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-1.5">
+          <Heart size={13} className="text-amber-400 mt-0.5 shrink-0" fill="currentColor" />
+          <span>No período há <b>{(stats.curtidasPostagens ?? 0).toLocaleString('pt-BR')}</b> curtidas nos posts (total da Meta), mas só <b>{stats.like.toLocaleString('pt-BR')}</b> têm <b>quem curtiu</b> identificado — o coletor do desktop ainda não capturou os curtidores dos outros posts desta janela{stats.ultimaCapturaLike ? <> (última captura cobre posts até <b>{new Date(stats.ultimaCapturaLike).toLocaleDateString('pt-BR')}</b>)</> : null}. <b>Não é o filtro</b>: é captura pendente. O ranking acumulado (todos os curtidores) fica na aba <b>Curtidores</b>.</span>
         </p>
       )}
 

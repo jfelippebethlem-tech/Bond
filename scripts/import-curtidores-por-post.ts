@@ -45,6 +45,7 @@ function acharMaisRecente(nome: string, envOverride?: string): string {
 
 const ARQ_CURT = acharMaisRecente('posts-curtidores.json', 'POSTS_CURTIDORES_FILE')
 const ARQ_META = acharMaisRecente('posts-meta.json', 'POSTS_META_FILE')
+const MARCA = path.join(os.homedir(), '.curtidores_post_marca')
 
 async function main() {
   const stamp = new Date().toISOString()
@@ -52,6 +53,12 @@ async function main() {
     console.log(`[${stamp}] posts-curtidores.json ausente — pulei (${ARQ_CURT})`)
     return
   }
+  // Mesmo guard de mtime do import-likers-sync: só re-sincroniza quando o arquivo MUDOU. Sem isso
+  // o cron de 5min apagava+reinseria ~98k linhas idênticas a cada run — criadoEm ficava igual em
+  // tudo (qualquer orderBy por criadoEm virava loteria) e o SQLite sofria escrita contínua à toa.
+  const mtimes = `${fs.statSync(ARQ_CURT).mtimeMs}|${fs.existsSync(ARQ_META) ? fs.statSync(ARQ_META).mtimeMs : 0}`
+  const ultimo = fs.existsSync(MARCA) ? fs.readFileSync(MARCA, 'utf8').trim() : ''
+  if (mtimes === ultimo) return // nada novo
   let curt: Record<string, string[]>
   try { curt = JSON.parse(fs.readFileSync(ARQ_CURT, 'utf8')) } catch { console.log(`[${stamp}] posts-curtidores.json inválido — pulei`); return }
 
@@ -85,6 +92,7 @@ async function main() {
     ops.push(prisma.bondInteracao.createMany({ data: rows.slice(i, i + LOTE) }))
   }
   await prisma.$transaction(ops)
+  fs.writeFileSync(MARCA, mtimes)
 
   console.log(`[${stamp}] curtidores-por-post: ${rows.length} likes DATADOS em ${codes.length} posts (arq ${path.basename(ARQ_CURT)})`)
   await prisma.$disconnect()
