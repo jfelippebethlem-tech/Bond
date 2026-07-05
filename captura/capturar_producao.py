@@ -205,22 +205,18 @@ def _ts_post(p):
 def selecionar(posts, feitos, agora):
     # cadência do dono: ~80 posts/dia divididos nas 6 runs (05–10h) → ~12–15 por run (média ~13,5×6≈81).
     n = random.randint(int(env("IG_MIN_POSTS", "12")), int(env("IG_MAX_POSTS", "15")))
-    run_idx = RUN_POR_HORA.get(agora.hour, 0)                  # 0 = fora da janela (disparo manual)
-    seg_qui = agora.date().weekday() in (0, 3)                 # Seg=0, Qui=3 (janela 05h–10h = mesmo dia)
-    recent_run = seg_qui and run_idx in (1, 2)                 # Seg/Qui: 2 primeiras runs = recentes
-    limite = agora - datetime.timedelta(days=10)               # "últimos 10 dias"
+    # RECENTES SEMPRE PRIMEIRO, janela de 21 dias: a aba /interações filtra "7 dias / esta semana /
+    # semana passada" — esses posts têm que estar capturados ANTES do backlog. A regra antiga (só 1
+    # recente por run, resto Seg/Qui; janela de 10 dias) deixou 13 dias de posts sem curtidor: quando
+    # o índice destravou, parte deles já tinha >10 dias e caía no FIM do backlog (que começa em 2015).
+    # Cadência inalterada: continua n posts por run; só a ORDEM prioriza o que o dono realmente olha.
+    limite = agora - datetime.timedelta(days=int(env("IG_RECENTES_DIAS", "21")))
     pend = [p for p in posts if precisa_capturar(p, feitos)]   # SÓ pendentes (exclui já-capturado)
     recentes = [p for p in pend if _ts_post(p) >= limite]      # já vêm mais-recente-primeiro (índice)
     antigos  = [p for p in pend if _ts_post(p) <  limite]
     antigos.sort(key=_ts_post)                                 # MAIS ANTIGOS PRIMEIRO (backlog monotônico)
-    sel = []
-    if recent_run:                                            # Seg/Qui: cobre os recentes pendentes
-        sel = recentes[:n]
-    elif recentes:                                            # toda run: 1 recente pendente (o mais novo)
-        sel.append(recentes[0])
-    sel += [p for p in antigos if p not in sel][:max(0, n - len(sel))]   # backlog: do mais antigo
-    if len(sel) < n:                                          # backlog antigo acabou -> recentes restantes
-        sel += [p for p in recentes if p not in sel][:n - len(sel)]
+    sel = recentes[:n]
+    sel += antigos[:max(0, n - len(sel))]                      # completa com backlog: do mais antigo
     return sel[:n]
 
 # ---------- captura de 1 post — MÉTODO DONO (página /liked_by/, lista COMPLETA) ----------
