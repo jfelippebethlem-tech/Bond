@@ -94,3 +94,17 @@ injeta `codigo_2fa` no `comando.json`; o Hermes digita. Tudo em segundos.
 - O Comando B exige a **senha do IG** salva em `C:\jfn\bond\.env` (só no desktop, fora do git).
 - Login automatizado tem **risco de bloqueio** do Instagram. Use com parcimônia.
 - Alternativa segura (sem senha): quando a sessão morrer, logar **manualmente** na janela.
+
+---
+
+## 9. Chave NVIDIA (ordem do dono, 2026-07-05)
+
+A VM deixou em **`C:\jfn\bond\likers-sync\chaves-desktop.env`** a chave **NVIDIA_API_KEY**
+(+ `NVIDIA_MODEL`) do núcleo Yoda. Passo a passo, sem inventar:
+
+1. Abra o arquivo e copie as duas linhas `NVIDIA_API_KEY=...` e `NVIDIA_MODEL=...`.
+2. Cole/mescle em `C:\Users\socah\jfn\hermes-migracao\TODAS-as-chaves.env`
+   (se já existir `NVIDIA_API_KEY` lá, SUBSTITUA a linha; não duplique).
+3. NÃO commite nem copie a chave para nenhum arquivo versionado, log ou mensagem.
+4. A chave é do plano free da NVIDIA (integrate.api.nvidia.com) — usar nos elos free da cadeia,
+   nunca contratar nada pago com ela.
