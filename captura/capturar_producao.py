@@ -190,12 +190,11 @@ def precisa_capturar(post, feitos):
     return r.get("like_count") != post.get("like_count")
 
 # ---------- seleção do ciclo (cadência do dono) — MONOTÔNICO, sem repetir ----------
-# Cada disparo do cron = 1 run = ~12–15 posts (~80/dia em 6 runs). Seleciona SÓ pendentes (nunca capturado com
-# sucesso, OU like_count mudou desde a última = re-passe por delta). O backlog antigo vai do
-# MAIS ANTIGO p/ o mais novo → a cobertura xxx/total cresce de forma monotônica até FECHAR
-# (não re-sorteia o que já está feito). Toda run garante >=1 recente pendente (posts novos
-# cobertos rápido). Seg/Qui: as 2 primeiras runs focam os recentes pendentes. A run se
-# localiza pelo RELÓGIO (hora 5,6,7,8,9,10 -> índice 1..6).
+# Cada disparo do cron = 1 run = ~12–15 posts (~80/dia em 6 runs). Ordem da run:
+#   1º os 10 posts MAIS NOVOS do índice (regra do dono 2026-07-05) — com delta: só re-entra se o
+#      like_count mudou desde a última captura boa (igual = mesma lista de likers, pular não perde);
+#   2º demais pendentes recentes (IG_RECENTES_DIAS, mais novo primeiro);
+#   3º backlog do MAIS ANTIGO p/ o mais novo → cobertura xxx/total cresce monotônica até FECHAR.
 RUN_POR_HORA = {5: 1, 6: 2, 7: 3, 8: 4, 9: 5, 10: 6}
 def _ts_post(p):
     s = p.get("timestamp") or ""
@@ -205,17 +204,20 @@ def _ts_post(p):
 def selecionar(posts, feitos, agora):
     # cadência do dono: ~80 posts/dia divididos nas 6 runs (05–10h) → ~12–15 por run (média ~13,5×6≈81).
     n = random.randint(int(env("IG_MIN_POSTS", "12")), int(env("IG_MAX_POSTS", "15")))
-    # RECENTES SEMPRE PRIMEIRO, janela de 21 dias: a aba /interações filtra "7 dias / esta semana /
-    # semana passada" — esses posts têm que estar capturados ANTES do backlog. A regra antiga (só 1
-    # recente por run, resto Seg/Qui; janela de 10 dias) deixou 13 dias de posts sem curtidor: quando
-    # o índice destravou, parte deles já tinha >10 dias e caía no FIM do backlog (que começa em 2015).
-    # Cadência inalterada: continua n posts por run; só a ORDEM prioriza o que o dono realmente olha.
+    # REGRA DO DONO (2026-07-05): toda run COMEÇA pelos 10 posts mais novos do índice — curtida
+    # acumula por dias, então o post volta à fila sempre que o like_count muda (delta do
+    # precisa_capturar). Depois, RECENTES pendentes (janela de 21 dias: a aba /interações filtra
+    # "7 dias / esta semana / semana passada" — têm que vir ANTES do backlog; a regra antiga de 1
+    # recente/run + janela de 10d deixou 13 dias de posts sem curtidor). Cadência inalterada:
+    # continua n posts por run; só a ORDEM prioriza o que o dono realmente olha.
+    top = int(env("IG_TOP_RECENTES", "10"))
+    prioridade = [p for p in posts[:top] if precisa_capturar(p, feitos)]  # índice já vem mais-novo-primeiro
     limite = agora - datetime.timedelta(days=int(env("IG_RECENTES_DIAS", "21")))
-    pend = [p for p in posts if precisa_capturar(p, feitos)]   # SÓ pendentes (exclui já-capturado)
+    pend = [p for p in posts if precisa_capturar(p, feitos) and p not in prioridade]
     recentes = [p for p in pend if _ts_post(p) >= limite]      # já vêm mais-recente-primeiro (índice)
     antigos  = [p for p in pend if _ts_post(p) <  limite]
     antigos.sort(key=_ts_post)                                 # MAIS ANTIGOS PRIMEIRO (backlog monotônico)
-    sel = recentes[:n]
+    sel = prioridade + recentes[:max(0, n - len(prioridade))]
     sel += antigos[:max(0, n - len(sel))]                      # completa com backlog: do mais antigo
     return sel[:n]
 
