@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client'
+import { pontuarViral, interacoesPonderadas } from '../lib/viral/algoritmo'
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Mini test runner
@@ -229,6 +230,49 @@ async function main() {
       console.log('\n     ⚠️  Nenhuma chave de IA configurada — IA ficará desativada')
     }
     // não falha — IA é opcional
+  })
+
+  // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
+  console.log('\n📈 Scorer viral (algoritmo.ts)')
+
+  await test('interacoesPonderadas — pesos 1/2/3 (like/comentário/compartilho)', () => {
+    assert(interacoesPonderadas({ likes: 1, comentarios: 1, compartilhos: 1 }) === 6, 'Soma ponderada incorreta')
+    assert(interacoesPonderadas({ likes: null, comentarios: undefined, compartilhos: 2 }) === 6, 'Null/undefined deviam contar 0')
+  })
+
+  await test('Camada A por impressões — paridade com a fórmula antiga da campanha', () => {
+    // wi = 100 + 20*2 + 10*3 = 170; 170/2000 = 8,5% de 10% ótimo → 85
+    const r = pontuarViral('feed', { likes: 100, comentarios: 20, compartilhos: 10, impressoes: 2000 })
+    assert(r.camada === 'A', `Camada esperada A, veio ${r.camada}`)
+    assert(r.scoreTotal === 85, `Score esperado 85, veio ${r.scoreTotal}`)
+  })
+
+  await test('Camada A por impressões — satura em 100', () => {
+    const r = pontuarViral('feed', { likes: 500, comentarios: 100, compartilhos: 100, impressoes: 1000 })
+    assert(r.scoreTotal === 100, `Score esperado 100, veio ${r.scoreTotal}`)
+  })
+
+  await test('Sem nenhum sinal disponível — score 0 (não NaN)', () => {
+    const r = pontuarViral('feed', {})
+    assert(r.scoreTotal === 0, `Score esperado 0, veio ${r.scoreTotal}`)
+  })
+
+  await test('temaEmAlta tri-state — desconhecido não dilui o score', () => {
+    const base = { likes: 100, comentarios: 20, compartilhos: 10, impressoes: 2000 }
+    const desconhecido = pontuarViral('feed', base)
+    const falso = pontuarViral('feed', { ...base, temaEmAlta: false })
+    assert(desconhecido.scoreTotal > falso.scoreTotal, `Desconhecido (${desconhecido.scoreTotal}) devia > falso explícito (${falso.scoreTotal})`)
+  })
+
+  await test('Camada B — selecionada quando há reach + sinal de distribuição', () => {
+    const r = pontuarViral('reel', { reach: 10000, saves: 300, sends: 200, likes: 500, completionPct: 60 })
+    assert(r.camada === 'B', `Camada esperada B, veio ${r.camada}`)
+    assert(r.scoreTotal > 0, 'Score camada B devia ser > 0')
+  })
+
+  await test('Gate baixaQualidade — zera o score', () => {
+    const r = pontuarViral('feed', { likes: 100, comentarios: 20, compartilhos: 10, impressoes: 2000, baixaQualidade: true })
+    assert(r.scoreTotal === 0, `Score esperado 0 com gate, veio ${r.scoreTotal}`)
   })
 
   // ── Resultado final ──────────────────────────────────────────────────────────

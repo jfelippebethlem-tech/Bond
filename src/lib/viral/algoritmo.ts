@@ -24,6 +24,7 @@ export type SinaisViral = {
   comentarios?: number
   compartilhos?: number
   seguidores?: number // p/ normalizar engajamento
+  impressoes?: number | null // p/ normalizar por impressão (camada A quando há impressões públicas)
   // ── Tendência (camada A) ──
   temaEmAlta?: boolean
   // ── Insights privados (camada B — 0/null sem read_insights) ──
@@ -68,10 +69,17 @@ const PESOS_PROXY: Record<string, number> = {
   gancho: 0.3,
   gatilhos: 0.22,
   engRate: 0.18,
+  engPorImpressao: 0.15,
   ritmo: 0.1,
   qualidade: 0.05,
   temaEmAlta: 0.1,
   comentariosNorm: 0.05,
+}
+
+// Interações ponderadas por peso viral (compartilho 3× > comentário 2× > like).
+// FONTE ÚNICA da fórmula — campanha.ts (potencial viral) e bond.ts (ordenação/fã) delegam aqui.
+export function interacoesPonderadas(p: { likes?: number | null; comentarios?: number | null; compartilhos?: number | null }): number {
+  return (p.likes ?? 0) + (p.comentarios ?? 0) * 2 + (p.compartilhos ?? 0) * 3
 }
 
 // satura uma razão em 0-1 (valor que já é "ótimo" vira 1).
@@ -136,9 +144,12 @@ export function pontuarViral(superficie: Superficie, s: SinaisViral): ResultadoV
       gancho: s.ganchoNota != null ? s.ganchoNota / 10 : null,
       gatilhos: s.gatilhosNota != null ? s.gatilhosNota / 10 : null,
       engRate,
+      // interações ponderadas / impressões — 10% = ótimo (paridade com o antigo potencialViral da campanha)
+      engPorImpressao: (s.impressoes ?? 0) > 0 ? sat(interacoesPonderadas(s) / (s.impressoes as number), 0.1) : null,
       ritmo: s.ritmoNota != null ? s.ritmoNota / 10 : null,
       qualidade: s.qualidadeNota != null ? s.qualidadeNota / 10 : null,
-      temaEmAlta: s.temaEmAlta ? 1 : 0,
+      // tri-state: desconhecido (null) ≠ explicitamente falso (0) — não dilui score de quem não checa tendência
+      temaEmAlta: s.temaEmAlta == null ? null : (s.temaEmAlta ? 1 : 0),
       comentariosNorm,
     }
     base = ponderar(valores, PESOS_PROXY)

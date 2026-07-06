@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai'
 import { getTwitterUser, getTwitterTweets, getTwitterLikers, getTwitterRetweeters } from './social/twitter'
 import { getFacebookPageInfo, getFacebookPosts, getFacebookPostInsights, getFacebookPostLikers, getFacebookPostComments } from './social/facebook'
 import { getInstagramAccountId, getInstagramProfile, getInstagramPosts, getInstagramPostInsights, getInstagramComments } from './social/instagram'
+import { interacoesPonderadas } from './viral/algoritmo'
 
 // ── AI client ─────────────────────────────────────────────────────────────────
 
@@ -49,10 +50,8 @@ function calcEngagement(likes = 0, comments = 0, shares = 0, impressions = 0): n
 // Interações brutas ponderadas (mesma fórmula do score de fã). Usado como
 // critério de ordenação quando NÃO há read_insights → engajamento global = 0
 // (sem isto, orderBy engajamento desc devolve ordem arbitrária e o filtro
-// engajamento>0 do "bottom" volta VAZIO).
-function interacoesBrutas(p: { likes?: number | null; comentarios?: number | null; compartilhos?: number | null }): number {
-  return (p.likes ?? 0) + (p.comentarios ?? 0) * 2 + (p.compartilhos ?? 0) * 3
-}
+// engajamento>0 do "bottom" volta VAZIO). Fórmula única em viral/algoritmo.ts (Fase 1.2).
+const interacoesBrutas = interacoesPonderadas
 
 // Ordena por engajamento desc com interações brutas como desempate (e como
 // critério principal quando todos os engajamentos são 0).
