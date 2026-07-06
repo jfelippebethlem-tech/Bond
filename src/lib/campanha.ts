@@ -2,6 +2,7 @@ import { prisma } from './db'
 import { GoogleGenerativeAI } from '@google/generative-ai'
 import { capturarTendencias, topTendencias } from './viral/tendencias'
 import { playbookAtual } from './viral/aprendizado'
+import { pontuarViral } from './viral/algoritmo'
 import { cerebroParaPrompt } from './cerebro'
 
 async function campanhaAI(prompt: string, maxTokens = 1200): Promise<string> {
@@ -22,14 +23,12 @@ Responda SEMPRE em português do Brasil. Nunca use markdown com asteriscos.`,
 }
 
 // Score de potencial viral de um post (0-100), camada-A (só métricas públicas, sem insights).
-// NÃO delega ao pontuarViral canônico de propósito: aquele exige sinais camada-B (sends/saves)
-// que este contexto de diagnóstico não tem — delegar zeraria todos os scores. Ver MOC-melhorias
-// Fase 1.2: unificar exige primeiro um modo camada-A no scorer canônico.
+// DELEGA ao scorer canônico (Fase 1.2 do MOC-melhorias): com só likes/comentários/compartilhos/
+// impressões, o pontuarViral usa o sinal engPorImpressao — paridade exata com a fórmula antiga
+// (interações ponderadas 3-2-1 / impressões, saturando em 10%).
 function calcularPotencialViral(likes: number, comentarios: number, compartilhos: number, impressoes: number): number {
   if (!impressoes) return 0
-  // Compartilhos têm peso triplo no viral — são o maior multiplicador de alcance
-  const viralScore = (compartilhos * 3 + comentarios * 2 + likes) / impressoes * 100
-  return Math.min(100, Math.round(viralScore * 10))
+  return pontuarViral('feed', { likes, comentarios, compartilhos, impressoes }).scoreTotal
 }
 
 // Analisa qual horário/dia tende a gerar mais engajamento
