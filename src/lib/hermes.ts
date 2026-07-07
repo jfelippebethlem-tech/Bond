@@ -30,7 +30,9 @@ export async function callAI(
       const data = await res.json()
       const text = data?.choices?.[0]?.message?.content
       if (text) return text
-    } catch {}
+    } catch (e) {
+      console.warn('[hermes] cerebras falhou, caindo pro próximo da cadeia:', e)
+    }
   }
 
   // Gemini (confiável) — 2º, antes do OpenRouter flaky. JFN 2026-06-21.
