@@ -75,22 +75,25 @@ export async function carregarNumeros(): Promise<NumeroPool[]> {
 export async function registrarEnvio(id: string, agora: Date = new Date()): Promise<void> {
   const n = await prisma.whatsappNumero.findUnique({ where: { id } })
   if (!n) return
-  const reset = precisaResetDiario(
+  const zerar = precisaResetDiario(
     { ...n, ultimoEnvioEm: n.ultimoEnvioEm, zeradoEm: n.zeradoEm } as NumeroPool,
     agora,
   )
-  // Na virada de dia o chip sobe um degrau da rampa; o teto é o tamanho da rampa
-  // EFETIVA (custom em Configuracao, se houver), não o padrão fixo.
+  // A rampa só AVANÇA numa virada de dia REAL (já havia um `zeradoEm` de um dia
+  // anterior). No 1º envio de um chip novo (`zeradoEm` null) o contador zera mas
+  // o nível fica no dia 1 — senão o chip pularia o aquecimento do primeiro dia.
+  // O teto é o tamanho da rampa EFETIVA (custom em Configuracao, se houver).
+  const subiuDeDia = !!n.zeradoEm && zerar
   let nivelAquecimento = n.nivelAquecimento
-  if (reset) {
+  if (subiuDeDia) {
     const { rampa } = await carregarParametros()
     nivelAquecimento = Math.min(n.nivelAquecimento + 1, rampa.length)
   }
   await prisma.whatsappNumero.update({
     where: { id },
     data: {
-      enviadosHoje: reset ? 1 : n.enviadosHoje + 1,
-      zeradoEm: reset ? agora : n.zeradoEm,
+      enviadosHoje: zerar ? 1 : n.enviadosHoje + 1,
+      zeradoEm: zerar ? agora : n.zeradoEm,
       ultimoEnvioEm: agora,
       nivelAquecimento,
     },

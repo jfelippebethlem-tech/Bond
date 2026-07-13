@@ -410,6 +410,18 @@ async function main() {
     await prisma.configuracao.delete({ where: { chave: 'wa_rampa' } })
   })
 
+  await test('registrarEnvio: chip NOVO (zeradoEm null) NÃO sobe a rampa no 1º envio (fica no dia 1)', async () => {
+    const { registrarEnvio } = await import('@/lib/pool')
+    const sp = `.whatsapp-auth/__t_novo_${Date.now()}__`
+    const n = await prisma.whatsappNumero.create({ data: { rotulo: '__t__', sessionPath: sp, nivelAquecimento: 1, enviadosHoje: 0, zeradoEm: null } })
+    await registrarEnvio(n.id)
+    const d = await prisma.whatsappNumero.findUnique({ where: { id: n.id } })
+    assert(d?.nivelAquecimento === 1, `chip novo deveria ficar no nível 1 no 1º envio, veio ${d?.nivelAquecimento}`)
+    assert(d?.enviadosHoje === 1, `enviadosHoje deveria ser 1, veio ${d?.enviadosHoje}`)
+    assert(!!d?.zeradoEm, 'zeradoEm deveria ser setado no 1º envio')
+    await prisma.whatsappNumero.delete({ where: { id: n.id } })
+  })
+
   // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
   console.log('\n📈 Scorer viral (algoritmo.ts)')
 
