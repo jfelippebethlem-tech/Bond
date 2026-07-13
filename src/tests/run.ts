@@ -271,6 +271,61 @@ async function main() {
     await prisma.whatsappFila.delete({ where: { id: f.id } })
   })
 
+  console.log('\n🎯 Pool de chips (blindagem)')
+
+  await test('tetoEfetivo segue a rampa e satura no tetoMax', async () => {
+    const { tetoEfetivo } = await import('@/lib/pool')
+    const p = { rampa: [20, 40, 80], tetoMax: 200, janelaInicio: 9, janelaFim: 20 }
+    const base = { id: 'a', status: 'ativo', tetoDiario: 200, enviadosHoje: 0, ultimoEnvioEm: null, zeradoEm: null }
+    assert(tetoEfetivo({ ...base, nivelAquecimento: 1 }, p) === 20, 'nível 1 → 20')
+    assert(tetoEfetivo({ ...base, nivelAquecimento: 3 }, p) === 80, 'nível 3 → 80')
+    assert(tetoEfetivo({ ...base, nivelAquecimento: 9 }, p) === 80, 'nível além da rampa → último (80)')
+  })
+
+  await test('dentroDaJanela respeita horário', async () => {
+    const { dentroDaJanela } = await import('@/lib/pool')
+    const p = { rampa: [200], tetoMax: 200, janelaInicio: 9, janelaFim: 20 }
+    const dia = (h: number) => new Date(2026, 6, 13, h, 0, 0)
+    assert(dentroDaJanela(dia(10), p), '10h dentro'); assert(!dentroDaJanela(dia(3), p), '3h fora')
+    assert(!dentroDaJanela(dia(20), p), '20h fora (fim exclusivo)')
+  })
+
+  await test('escolherNumero pega o de maior orçamento restante', async () => {
+    const { escolherNumero } = await import('@/lib/pool')
+    const p = { rampa: [100], tetoMax: 100, janelaInicio: 0, janelaFim: 24 }
+    const agora = new Date(2026, 6, 13, 12, 0, 0)
+    const a = { id: 'a', status: 'ativo', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 90, ultimoEnvioEm: null, zeradoEm: agora }
+    const b = { id: 'b', status: 'ativo', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 10, ultimoEnvioEm: null, zeradoEm: agora }
+    assert(escolherNumero([a, b], agora, p)?.id === 'b', 'Devia escolher b (mais orçamento)')
+  })
+
+  await test('escolherNumero ignora banido/pausado e retorna null se todos no teto', async () => {
+    const { escolherNumero } = await import('@/lib/pool')
+    const p = { rampa: [100], tetoMax: 100, janelaInicio: 0, janelaFim: 24 }
+    const agora = new Date(2026, 6, 13, 12, 0, 0)
+    const banido = { id: 'a', status: 'banido', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 0, ultimoEnvioEm: null, zeradoEm: agora }
+    const cheio = { id: 'b', status: 'ativo', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 100, ultimoEnvioEm: null, zeradoEm: agora }
+    assert(escolherNumero([banido, cheio], agora, p) === null, 'Nenhum elegível → null')
+  })
+
+  await test('escolherNumero fora da janela retorna null', async () => {
+    const { escolherNumero } = await import('@/lib/pool')
+    const p = { rampa: [100], tetoMax: 100, janelaInicio: 9, janelaFim: 20 }
+    const agora = new Date(2026, 6, 13, 3, 0, 0)
+    const n = { id: 'a', status: 'ativo', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 0, ultimoEnvioEm: null, zeradoEm: agora }
+    assert(escolherNumero([n], agora, p) === null, 'Fora da janela → null')
+  })
+
+  await test('precisaResetDiario detecta virada de dia', async () => {
+    const { precisaResetDiario } = await import('@/lib/pool')
+    const hoje = new Date(2026, 6, 13, 12, 0, 0)
+    const ontem = new Date(2026, 6, 12, 23, 0, 0)
+    const base = { id: 'a', status: 'ativo', tetoDiario: 100, nivelAquecimento: 1, enviadosHoje: 50, ultimoEnvioEm: null }
+    assert(precisaResetDiario({ ...base, zeradoEm: null }, hoje), 'zeradoEm null → reset')
+    assert(precisaResetDiario({ ...base, zeradoEm: ontem }, hoje), 'ontem → reset')
+    assert(!precisaResetDiario({ ...base, zeradoEm: hoje }, hoje), 'hoje → sem reset')
+  })
+
   console.log('\n🚫 Opt-out')
 
   await test('isPalavraOptOut reconhece variações (acento/caixa/espaço)', async () => {
