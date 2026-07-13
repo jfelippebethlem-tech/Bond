@@ -13,6 +13,7 @@
 - **Só base própria opt-in:** audiência = `Pessoa` com `tipo` in (`apoiador`,`coordenador`), `ativo=true`, `telefone != null`. Nunca número frio.
 - **Migração aditiva:** nada renomeado/removido no schema. Aplicar com `npm run db:push` (SQLite, sem `prisma migrate`).
 - **Sem custo de API:** SMS via Android Gateway local; WhatsApp via Baileys. Nenhuma chave paga.
+- **IA só gratuita:** este sistema não usa IA na forma atual (variação é determinística, personalização é `{nome}`). Se IA for adicionada (ex.: gerar variações naturais de texto para anti-ban), usar EXCLUSIVAMENTE o stack gratuito já existente do projeto (cadeia Hermes / Groq `llama-3.3-70b-versatile` / OpenRouter `:free`) — nunca provedor pago, nunca free tier finito.
 - **Telefone:** `normalizarTelefone` devolve dígitos com DDI 55 sem `+` (ex.: `5521999998888`). Gateway SMS exige E.164 com `+`.
 - **Import de Baileys sempre dinâmico** (`await import(...)`) — nunca entra no build do Next.
 - **Sessões de chip** ficam em `./.whatsapp-auth/<numeroId>` — não commitar (já no `.gitignore` como `.whatsapp-auth`).
@@ -921,7 +922,7 @@ export async function enviarViaGateway(telefone: string, texto: string): Promise
   } catch (e) { console.error('[SMS] erro no gateway:', e); return false }
 }
 
-export async function enfileirarSms(opts: { telefone: string; mensagem: string; tipo?: string; pessoaId?: string; referencia?: string; campanhaId?: string; agendadoPara?: Date }) {
+export async function enfileirarSms(opts: { telefone: string; mensagem: string; tipo?: string; pessoaId?: string; referencia?: string; agendadoPara?: Date }) {
   const tel = normalizarTelefone(opts.telefone)
   if (!tel) return { ok: false as const, motivo: 'telefone inválido' }
   if (await estaOptOut(tel)) return { ok: false as const, motivo: 'opt-out' }
@@ -945,7 +946,7 @@ export async function enfileirarBroadcastSms(mensagem: string, tipo = 'broadcast
 }
 ```
 
-Nota: `SmsFila` não tem coluna `campanhaId`; o broadcast grava a referência da campanha em `referencia` (o `Disparo` já rastreia contagens agregadas). `campanhaId` no `enfileirarSms` é aceito para simetria de assinatura mas não persistido — remover o parâmetro se o typecheck reclamar de não uso não é necessário (é opcional).
+Nota: `SmsFila` não tem coluna `campanhaId`; o broadcast grava a referência da campanha em `referencia` (o `Disparo` já rastreia contagens agregadas).
 
 - [ ] **Step 4: Run test to verify it passes**
 

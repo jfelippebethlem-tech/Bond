@@ -54,3 +54,7 @@ likers-sync/
 resposta.json
 comando.json
 graphify-out/
+
+# cópia de trabalho do banco (disparos multicanal — não commitar)
+prisma/dev-disparos.db*
+prisma/prisma/
