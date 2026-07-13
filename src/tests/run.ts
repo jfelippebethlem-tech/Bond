@@ -1,6 +1,11 @@
 import { PrismaClient } from '@prisma/client'
 import { pontuarViral, interacoesPonderadas } from '../lib/viral/algoritmo'
 
+// Testes rodam SEMPRE na cópia dedicada (mesma do e2e) — nunca no banco vivo.
+// Os testes criam Pessoa/filas/Configuracao e a limpeza não roda se um assert
+// falha no meio; contra o prod.db isso vira resíduo que um worker pode ENVIAR.
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'file:./dev-disparos.db'
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Mini test runner
 // ──────────────────────────────────────────────────────────────────────────────
@@ -35,6 +40,19 @@ const prisma = new PrismaClient()
 
 async function main() {
   console.log('\n🧪 PolitiMonitor — Rodando testes...\n')
+
+  // Trava dura: nunca rodar contra o banco vivo, e limpar resíduo de execuções
+  // anteriores abortadas (chips __t*, pessoas __*/Fulano Teste, wa_rampa custom).
+  const dbList = await prisma.$queryRawUnsafe<{ file: string }[]>('PRAGMA database_list')
+  const dbFile = String(dbList?.[0]?.file ?? '')
+  if (/prod\.db$/i.test(dbFile)) {
+    console.error(`\n🛑 ABORTADO: testes apontando para o banco de produção (${dbFile}).`)
+    process.exit(1)
+  }
+  console.log(`   (banco de teste: ${dbFile})\n`)
+  await prisma.whatsappNumero.deleteMany({ where: { rotulo: { startsWith: '__t' } } })
+  await prisma.pessoa.deleteMany({ where: { OR: [{ nome: { startsWith: '__' } }, { nome: 'Fulano Teste' }] } })
+  await prisma.configuracao.deleteMany({ where: { chave: 'wa_rampa' } })
 
   // ── 1. Database ──────────────────────────────────────────────────────────────
   console.log('📂 Banco de dados')

@@ -11,6 +11,10 @@ import { PrismaClient } from '@prisma/client'
 import http from 'http'
 import { AddressInfo } from 'net'
 
+// Trava dura: e2e SEMPRE na cópia dedicada — limpar() zera filas/chips/apoiadores,
+// contra o prod.db seria perda de dados reais. Override só via TEST_DATABASE_URL.
+process.env.DATABASE_URL = process.env.TEST_DATABASE_URL ?? 'file:./dev-disparos.db'
+
 const prisma = new PrismaClient()
 
 // ── mini runner ───────────────────────────────────────────────────────────────
@@ -48,6 +52,11 @@ const MARK = '__E2E__'
 // real drena a fila inteira), então isolamos zerando as tabelas operacionais + os
 // apoiadores de teste — garante contagens determinísticas independentemente de resíduos.
 async function limpar() {
+  const dbList = await prisma.$queryRawUnsafe<{ file: string }[]>('PRAGMA database_list')
+  if (/prod\.db$/i.test(String(dbList?.[0]?.file ?? ''))) {
+    console.error('\n🛑 ABORTADO: e2e apontando para o banco de produção — limpar() apagaria dados reais.')
+    process.exit(1)
+  }
   await prisma.whatsappFila.deleteMany({})
   await prisma.smsFila.deleteMany({})
   await prisma.disparo.deleteMany({})
