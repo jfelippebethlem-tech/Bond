@@ -53,31 +53,33 @@ async function iniciarChip(numeroId: string, rotulo: string) {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sock.ev.on('connection.update', async (update: any) => {
-    const { connection, lastDisconnect, qr } = update
-    if (qr) {
-      const dataUrl = await qrcode.toDataURL(qr)
-      await setConfig(`whatsapp_qr_${numeroId}`, dataUrl)
-      await setConfig(`whatsapp_status_${numeroId}`, 'aguardando_qr')
-    }
-    if (connection === 'open') {
-      conectados.add(numeroId)
-      await setConfig(`whatsapp_qr_${numeroId}`, '')
-      await setConfig(`whatsapp_status_${numeroId}`, 'conectado')
-      await prisma.whatsappNumero.update({ where: { id: numeroId }, data: { status: 'ativo' } }).catch(() => {})
-      console.log(`[WhatsApp] ✓ chip "${rotulo}" conectado`)
-    }
-    if (connection === 'close') {
-      conectados.delete(numeroId)
-      const code = lastDisconnect?.error?.output?.statusCode
-      const deslogado = code === DisconnectReason.loggedOut
-      await setConfig(`whatsapp_status_${numeroId}`, deslogado ? 'desconectado' : 'reconectando')
-      if (deslogado) {
-        await marcarBanido(numeroId)
-        await alerta(`⚠️ Chip WhatsApp "${rotulo}" foi deslogado/banido e saiu do pool.`)
-      } else {
-        setTimeout(() => iniciarChip(numeroId, rotulo).catch((e) => console.error(e)), 5000)
+    try {
+      const { connection, lastDisconnect, qr } = update
+      if (qr) {
+        const dataUrl = await qrcode.toDataURL(qr)
+        await setConfig(`whatsapp_qr_${numeroId}`, dataUrl)
+        await setConfig(`whatsapp_status_${numeroId}`, 'aguardando_qr')
       }
-    }
+      if (connection === 'open') {
+        conectados.add(numeroId)
+        await setConfig(`whatsapp_qr_${numeroId}`, '')
+        await setConfig(`whatsapp_status_${numeroId}`, 'conectado')
+        await prisma.whatsappNumero.update({ where: { id: numeroId }, data: { status: 'ativo' } }).catch(() => {})
+        console.log(`[WhatsApp] ✓ chip "${rotulo}" conectado`)
+      }
+      if (connection === 'close') {
+        conectados.delete(numeroId)
+        const code = lastDisconnect?.error?.output?.statusCode
+        const deslogado = code === DisconnectReason.loggedOut
+        await setConfig(`whatsapp_status_${numeroId}`, deslogado ? 'desconectado' : 'reconectando')
+        if (deslogado) {
+          await marcarBanido(numeroId)
+          await alerta(`⚠️ Chip WhatsApp "${rotulo}" foi deslogado/banido e saiu do pool.`)
+        } else {
+          setTimeout(() => iniciarChip(numeroId, rotulo).catch((e) => console.error(e)), 5000)
+        }
+      }
+    } catch (e) { console.error('[WhatsApp] erro connection.update:', e) }
   })
 
   // Opt-out inbound
