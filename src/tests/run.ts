@@ -395,6 +395,21 @@ async function main() {
     await prisma.whatsappNumero.delete({ where: { id: n.id } })
   })
 
+  await test('registrarEnvio: rampa sobe no reset e satura no tamanho da rampa CUSTOM de Configuracao', async () => {
+    const { registrarEnvio } = await import('@/lib/pool')
+    // rampa custom de tamanho 2 → nível satura em 2 (não em 6 do padrão)
+    await prisma.configuracao.upsert({ where: { chave: 'wa_rampa' }, update: { valor: '10,20' }, create: { chave: 'wa_rampa', valor: '10,20' } })
+    const ontem = new Date(Date.now() - 24 * 3600 * 1000)
+    const sp = `.whatsapp-auth/__t_rampa_${Date.now()}__`
+    const n = await prisma.whatsappNumero.create({ data: { rotulo: '__t__', sessionPath: sp, nivelAquecimento: 2, enviadosHoje: 5, zeradoEm: ontem } })
+    await registrarEnvio(n.id) // reset (virada de dia) → tenta subir p/ 3, mas satura em 2 (rampa custom)
+    const d = await prisma.whatsappNumero.findUnique({ where: { id: n.id } })
+    assert(d?.nivelAquecimento === 2, `Nível deveria saturar em 2 (rampa custom), veio ${d?.nivelAquecimento}`)
+    assert(d?.enviadosHoje === 1, `enviadosHoje deveria resetar p/ 1, veio ${d?.enviadosHoje}`)
+    await prisma.whatsappNumero.delete({ where: { id: n.id } })
+    await prisma.configuracao.delete({ where: { chave: 'wa_rampa' } })
+  })
+
   // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
   console.log('\n📈 Scorer viral (algoritmo.ts)')
 
@@ -454,6 +469,16 @@ async function main() {
     const v = microVariacao('oi', 1)
     assert(v !== 'oi', 'seed 1 deveria variar')
     assert(v.replace(/​/g, '') === 'oi', 'variação só pode adicionar caracteres invisíveis')
+  })
+
+  await test('expandirSpintax escolhe variante por seed e não toca {nome} nem texto sem spintax', async () => {
+    const { expandirSpintax } = await import('@/lib/whatsapp')
+    assert(expandirSpintax('{Oi|Olá|E aí} {nome}', 0) === 'Oi {nome}', 'seed 0 → 1ª opção; {nome} intacto')
+    assert(expandirSpintax('{Oi|Olá|E aí} {nome}', 1) === 'Olá {nome}', 'seed 1 → 2ª opção')
+    assert(expandirSpintax('{Oi|Olá|E aí} {nome}', 4) === 'Olá {nome}', 'seed 4 % 3 = 1 → 2ª opção')
+    assert(expandirSpintax('sem spintax {nome}', 2) === 'sem spintax {nome}', 'sem grupo com | → inalterado')
+    // dois grupos no mesmo texto
+    assert(expandirSpintax('{a|b} e {c|d}', 1) === 'b e d', 'ambos os grupos expandem')
   })
 
   await test('enfileirarBroadcast pula telefones em opt-out', async () => {

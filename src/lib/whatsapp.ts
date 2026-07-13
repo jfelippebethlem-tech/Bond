@@ -38,6 +38,18 @@ export function microVariacao(texto: string, seed: number): string {
   return texto + INVISIVEL.repeat(n)
 }
 
+/**
+ * Expande spintax `{a|b|c}` escolhendo UMA variante por seed — variação de texto VISÍVEL
+ * (anti-ban muito mais forte que caractere invisível). Grupos sem `|` (ex.: `{nome}`) não são tocados.
+ * Ex.: expandirSpintax('{Oi|Olá} {nome}', 1) → 'Olá {nome}'.
+ */
+export function expandirSpintax(texto: string, seed: number): string {
+  return texto.replace(/\{([^{}]*\|[^{}]*)\}/g, (_m, grupo: string) => {
+    const opcoes = grupo.split('|')
+    return opcoes[(((seed % opcoes.length) + opcoes.length) % opcoes.length)]
+  })
+}
+
 export type TipoMensagem = 'notificacao' | 'cobranca' | 'nps' | 'conquista' | 'broadcast' | 'alerta'
 
 // Enfileira uma mensagem para um telefone

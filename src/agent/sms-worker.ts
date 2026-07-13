@@ -6,6 +6,7 @@
 import { prisma } from '../lib/db'
 import { enviarViaGateway } from '../lib/sms'
 import { estaOptOut } from '../lib/optout'
+import { personalizar, expandirSpintax } from '../lib/whatsapp'
 
 const INTERVALO_FILA = 15_000
 const MAX_TENTATIVAS = 3
@@ -35,9 +36,12 @@ async function drenarFila() {
         await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
         continue
       }
-      const ok = await enviarViaGateway(msg.telefone, msg.mensagem)
+      // SMS: personaliza {nome} e expande spintax; NÃO usa caractere invisível (ruim para SMS).
+      const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
+      const texto = expandirSpintax(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 6))
+      const ok = await enviarViaGateway(msg.telefone, texto)
       if (ok) {
-        await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date() } })
+        await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), erro: null } })
         console.log(`[SMS] ✓ ${msg.telefone}`)
       } else {
         const tentativas = msg.tentativas + 1

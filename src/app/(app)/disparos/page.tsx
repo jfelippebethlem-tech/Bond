@@ -15,13 +15,20 @@ export default function DisparosPage() {
   const [msg, setMsg] = useState('')
 
   async function carregar() {
-    const r = await fetch('/api/disparos').then((x) => x.json())
-    setNumeros(r.numeros || [])
-    setCampanhas(r.campanhas || [])
-    const s = await fetch('/api/disparos/sms-status').then((x) => x.json())
-    setSmsOnline(s.online)
+    try {
+      const r = await fetch('/api/disparos').then((x) => x.json())
+      setNumeros(r.numeros || [])
+      setCampanhas(r.campanhas || [])
+      const s = await fetch('/api/disparos/sms-status').then((x) => x.json())
+      setSmsOnline(s.online)
+    } catch {
+      setMsg('Erro ao carregar dados (rede/servidor).')
+    }
   }
   useEffect(() => { carregar() }, [])
+
+  // Se o gateway SMS estiver offline, não deixa o canal SMS selecionado.
+  useEffect(() => { if (smsOnline === false) setCanais((cur) => cur.filter((c) => c !== 'sms')) }, [smsOnline])
 
   function toggleCanal(c: string) {
     setCanais((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]))
@@ -29,18 +36,26 @@ export default function DisparosPage() {
 
   async function disparar() {
     setMsg('Enviando...')
-    const r = await fetch('/api/disparos', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ titulo, mensagem, canais, audiencia: ['apoiador', 'coordenador'] }),
-    }).then((x) => x.json())
-    if (r.erro) setMsg('Erro: ' + r.erro)
-    else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS (alvo: ${r.totalAlvo})`); setTitulo(''); setMensagem(''); carregar() }
+    try {
+      const r = await fetch('/api/disparos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ titulo, mensagem, canais, audiencia: ['apoiador', 'coordenador'] }),
+      }).then((x) => x.json())
+      if (r.erro) setMsg('Erro: ' + r.erro)
+      else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS (alvo: ${r.totalAlvo})`); setTitulo(''); setMensagem(''); carregar() }
+    } catch {
+      setMsg('Erro ao disparar (rede/servidor). Nada foi enviado.')
+    }
   }
 
   async function addChip() {
     if (!novoRotulo.trim()) return
-    await fetch('/api/disparos/numero', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotulo: novoRotulo }) })
-    setNovoRotulo(''); carregar()
+    try {
+      await fetch('/api/disparos/numero', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ rotulo: novoRotulo }) })
+      setNovoRotulo(''); carregar()
+    } catch {
+      setMsg('Erro ao cadastrar chip (rede/servidor).')
+    }
   }
 
   return (
@@ -53,7 +68,7 @@ export default function DisparosPage() {
         <textarea className="w-full border rounded p-2 h-28" placeholder="Mensagem (use {nome} para personalizar)" value={mensagem} onChange={(e) => setMensagem(e.target.value)} />
         <div className="flex gap-4">
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('whatsapp')} onChange={() => toggleCanal('whatsapp')} /> WhatsApp</label>
-          <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('sms')} onChange={() => toggleCanal('sms')} /> SMS {smsOnline === false && <span className="text-red-500 text-xs">(gateway offline)</span>}</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('sms')} disabled={smsOnline === false} onChange={() => toggleCanal('sms')} /> SMS {smsOnline === false && <span className="text-red-500 text-xs">(gateway offline)</span>}</label>
         </div>
         <button className="bg-blue-600 text-white rounded px-4 py-2" onClick={disparar}>Disparar</button>
         {msg && <p className="text-sm">{msg}</p>}

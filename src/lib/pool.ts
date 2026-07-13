@@ -79,13 +79,20 @@ export async function registrarEnvio(id: string, agora: Date = new Date()): Prom
     { ...n, ultimoEnvioEm: n.ultimoEnvioEm, zeradoEm: n.zeradoEm } as NumeroPool,
     agora,
   )
+  // Na virada de dia o chip sobe um degrau da rampa; o teto é o tamanho da rampa
+  // EFETIVA (custom em Configuracao, se houver), não o padrão fixo.
+  let nivelAquecimento = n.nivelAquecimento
+  if (reset) {
+    const { rampa } = await carregarParametros()
+    nivelAquecimento = Math.min(n.nivelAquecimento + 1, rampa.length)
+  }
   await prisma.whatsappNumero.update({
     where: { id },
     data: {
       enviadosHoje: reset ? 1 : n.enviadosHoje + 1,
       zeradoEm: reset ? agora : n.zeradoEm,
       ultimoEnvioEm: agora,
-      nivelAquecimento: reset ? Math.min(n.nivelAquecimento + 1, PARAMS_PADRAO.rampa.length) : n.nivelAquecimento,
+      nivelAquecimento,
     },
   })
 }

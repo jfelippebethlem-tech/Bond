@@ -9,7 +9,7 @@
  * (SAIR/PARAR/...) é respeitado. Chip deslogado é marcado como banido e sai do pool.
  */
 import { prisma } from '../lib/db'
-import { setConfig, personalizar, microVariacao, normalizarTelefone } from '../lib/whatsapp'
+import { setConfig, personalizar, microVariacao, expandirSpintax, normalizarTelefone } from '../lib/whatsapp'
 import { escolherNumero, carregarNumeros, carregarParametros, registrarEnvio, marcarBanido } from '../lib/pool'
 import { isPalavraOptOut, registrarOptOut, estaOptOut } from '../lib/optout'
 import qrcode from 'qrcode'
@@ -136,11 +136,12 @@ async function drenarFila() {
       }
 
       const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
-      const texto = microVariacao(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 3))
+      const seed = Math.floor(Math.random() * 6)
+      const texto = microVariacao(expandirSpintax(personalizar(msg.mensagem, pessoa?.nome), seed), seed)
       const jid = `${msg.telefone}@s.whatsapp.net`
       try {
         await sock.sendMessage(jid, { text: texto })
-        await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), numeroId: escolhido.id } })
+        await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), numeroId: escolhido.id, erro: null } })
         await registrarEnvio(escolhido.id)
         console.log(`[WhatsApp] ✓ ${msg.telefone} via ${escolhido.id}`)
       } catch (e) {
