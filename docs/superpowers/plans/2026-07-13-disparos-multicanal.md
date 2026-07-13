@@ -1,5 +1,23 @@
 # Disparos Multicanal — Implementation Plan
 
+> **STATUS (2026-07-13): IMPLEMENTADO e verificado.** 13 tarefas + review de branch + fix wave + itens deferidos. Suíte 52/52, `tsc` limpo, `next build` isolado OK. Branch `feat/disparos-multicanal`; NÃO deployado (ver runbook abaixo). Todo o desenvolvimento rodou contra a cópia `prisma/dev-disparos.db`; `prod.db` intocado.
+>
+> ### Hardening pós-review + itens deferidos (resolvidos)
+> - **Opt-out** aplicado no enqueue transacional (`enfileirarWhatsapp`) E no ponto de envio dos 2 workers (marca `cancelado`); cobre WhatsApp e SMS.
+> - **Rampa de aquecimento** progride (`registrarEnvio` sobe `nivelAquecimento` no reset diário; teto = tamanho da rampa EFETIVA, incl. custom de `Configuracao`).
+> - **Audiência** propagada no fan-out (`enfileirarBroadcast`/`enfileirarBroadcastSms`/`dispararCampanha`).
+> - **Anti-duplicação**: guarda de re-entrância (`drenando`) nos 2 workers.
+> - **Variação de texto**: `expandirSpintax` `{a|b|c}` — variação VISÍVEL, **grátis e offline** (sem IA no hot path: chamar LLM por mensagem em massa arriscaria estourar free tier, contra a regra de custo). WhatsApp = spintax + micro-variação invisível; SMS = `{nome}` + spintax (sem invisível). Conforme a regra "IA só gratuita", qualquer variação por IA futura usa só o stack grátis (Hermes/Groq/OpenRouter `:free`).
+> - **UI** `/disparos`: `try/catch` nos fetch; checkbox SMS desabilitado e auto-desmarcado quando o gateway está offline. `sms-status` = `force-dynamic` (evita congelar o status no build).
+> - `erro` limpo ao suceder após falha (ambos workers).
+>
+> ### Runbook de deploy (pendências OPERACIONAIS, não código)
+> 1. `db:push` no `prod.db` real (4 tabelas novas — aditivo).
+> 2. Matar o whatsapp-worker legado antes de subir o pool (senão os dois drenam a mesma fila).
+> 3. Cadastrar chip(s) em `/disparos` e **re-parear** (sessão nova em `.whatsapp-auth/<id>`).
+> 4. Instalar `capcom6/android-sms-gateway` no Android e preencher `SMS_GATEWAY_URL/USER/PASS` no `.env`.
+> 5. TZ do processo = `America/Sao_Paulo` (janela 9–20h depende disso).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Dar ao polimonitor disparo em massa gratuito por SMS (Android Gateway) e WhatsApp multi-chip blindado, com opt-out e rastreio de campanha.
