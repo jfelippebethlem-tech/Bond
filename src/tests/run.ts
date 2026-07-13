@@ -455,6 +455,31 @@ async function main() {
     await prisma.pessoa.delete({ where: { id: p.id } })
   })
 
+  // ── SMS ──────────────────────────────────────────────────────────────────────
+  console.log('\n📲 SMS — gateway')
+
+  await test('montarRequisicaoGateway monta E.164, path e Basic auth', async () => {
+    const { montarRequisicaoGateway } = await import('@/lib/sms')
+    const req = montarRequisicaoGateway('5521999998888', 'oi', { url: 'http://10.0.0.5:8080/', user: 'u', pass: 'p' })
+    assert(req.url === 'http://10.0.0.5:8080/message', `URL incorreta: ${req.url}`)
+    const body = JSON.parse(req.body)
+    assert(body.phoneNumbers[0] === '+5521999998888', `E.164 incorreto: ${body.phoneNumbers[0]}`)
+    assert(body.textMessage.text === 'oi', 'Texto incorreto')
+    const auth = req.headers['Authorization']
+    assert(auth === 'Basic ' + Buffer.from('u:p').toString('base64'), `Auth incorreto: ${auth}`)
+  })
+
+  await test('enfileirarSms rejeita telefone inválido e pula opt-out', async () => {
+    const { enfileirarSms } = await import('@/lib/sms')
+    const r1 = await enfileirarSms({ telefone: '123', mensagem: 'x' })
+    assert(!r1.ok, 'Telefone inválido deveria falhar')
+    const { registrarOptOut } = await import('@/lib/optout')
+    await registrarOptOut('5521944443333', 'todos', '__teste__')
+    const r2 = await enfileirarSms({ telefone: '21944443333', mensagem: 'x' })
+    assert(!r2.ok && r2.motivo === 'opt-out', `Deveria pular opt-out, veio ${JSON.stringify(r2)}`)
+    await prisma.optOut.deleteMany({ where: { telefone: '5521944443333' } })
+  })
+
   // ── Resultado final ──────────────────────────────────────────────────────────
   console.log('\n' + '─'.repeat(50))
   if (failed === 0) {
