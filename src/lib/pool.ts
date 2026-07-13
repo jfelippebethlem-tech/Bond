@@ -59,3 +59,49 @@ export function escolherNumero(numeros: NumeroPool[], agora: Date, p: Parametros
   })
   return elegiveis[0].n
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Wrappers de DB — tarefa Task 4
+// ──────────────────────────────────────────────────────────────────────────────
+
+import { prisma } from './db'
+
+export async function carregarNumeros(): Promise<NumeroPool[]> {
+  return prisma.whatsappNumero.findMany({
+    select: { id: true, status: true, tetoDiario: true, nivelAquecimento: true, enviadosHoje: true, ultimoEnvioEm: true, zeradoEm: true },
+  })
+}
+
+export async function registrarEnvio(id: string, agora: Date = new Date()): Promise<void> {
+  const n = await prisma.whatsappNumero.findUnique({ where: { id } })
+  if (!n) return
+  const reset = precisaResetDiario(
+    { ...n, ultimoEnvioEm: n.ultimoEnvioEm, zeradoEm: n.zeradoEm } as NumeroPool,
+    agora,
+  )
+  await prisma.whatsappNumero.update({
+    where: { id },
+    data: {
+      enviadosHoje: reset ? 1 : n.enviadosHoje + 1,
+      zeradoEm: reset ? agora : n.zeradoEm,
+      ultimoEnvioEm: agora,
+    },
+  })
+}
+
+export async function marcarBanido(id: string): Promise<void> {
+  await prisma.whatsappNumero.update({ where: { id }, data: { status: 'banido' } })
+}
+
+export async function carregarParametros(): Promise<ParametrosPool> {
+  const rows = await prisma.configuracao.findMany({
+    where: { chave: { in: ['wa_janela_inicio', 'wa_janela_fim', 'wa_teto_max', 'wa_rampa'] } },
+  })
+  const cfg = Object.fromEntries(rows.map((r) => [r.chave, r.valor]))
+  return {
+    rampa: cfg['wa_rampa'] ? cfg['wa_rampa'].split(',').map((x) => parseInt(x.trim(), 10)) : PARAMS_PADRAO.rampa,
+    tetoMax: cfg['wa_teto_max'] ? parseInt(cfg['wa_teto_max'], 10) : PARAMS_PADRAO.tetoMax,
+    janelaInicio: cfg['wa_janela_inicio'] ? parseInt(cfg['wa_janela_inicio'], 10) : PARAMS_PADRAO.janelaInicio,
+    janelaFim: cfg['wa_janela_fim'] ? parseInt(cfg['wa_janela_fim'], 10) : PARAMS_PADRAO.janelaFim,
+  }
+}

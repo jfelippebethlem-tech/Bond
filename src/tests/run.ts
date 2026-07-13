@@ -347,6 +347,32 @@ async function main() {
     await prisma.optOut.deleteMany({ where: { telefone: tel } })
   })
 
+  // ── Pool — wrappers de DB ────────────────────────────────────────────────────
+  console.log('\n🔗 Pool — wrappers de DB')
+
+  await test('registrarEnvio incrementa contador e reseta na virada de dia', async () => {
+    const { registrarEnvio } = await import('@/lib/pool')
+    const sessionPath = `.whatsapp-auth/__t_reg_${Date.now()}__`
+    const n = await prisma.whatsappNumero.create({
+      data: { rotulo: '__t__', sessionPath, enviadosHoje: 5, zeradoEm: new Date(2020, 0, 1) },
+    })
+    await registrarEnvio(n.id) // zeradoEm antigo → deve resetar p/ 1
+    const depois = await prisma.whatsappNumero.findUnique({ where: { id: n.id } })
+    assert(depois?.enviadosHoje === 1, `Esperado 1 após reset+envio, veio ${depois?.enviadosHoje}`)
+    assert(!!depois?.ultimoEnvioEm, 'ultimoEnvioEm devia ser setado')
+    await prisma.whatsappNumero.delete({ where: { id: n.id } })
+  })
+
+  await test('marcarBanido muda status', async () => {
+    const { marcarBanido } = await import('@/lib/pool')
+    const sessionPath = `.whatsapp-auth/__t_ban_${Date.now()}__`
+    const n = await prisma.whatsappNumero.create({ data: { rotulo: '__t__', sessionPath, status: 'ativo' } })
+    await marcarBanido(n.id)
+    const depois = await prisma.whatsappNumero.findUnique({ where: { id: n.id } })
+    assert(depois?.status === 'banido', `Status esperado banido, veio ${depois?.status}`)
+    await prisma.whatsappNumero.delete({ where: { id: n.id } })
+  })
+
   // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
   console.log('\n📈 Scorer viral (algoritmo.ts)')
 
