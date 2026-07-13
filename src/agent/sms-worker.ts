@@ -15,30 +15,38 @@ function jitterMs(): number {
   return min + Math.floor(Math.random() * (max - min))
 }
 
+let drenando = false
+
 async function drenarFila() {
-  const pendentes = await prisma.smsFila.findMany({
-    where: {
-      status: 'pendente',
-      tentativas: { lt: MAX_TENTATIVAS },
-      OR: [{ agendadoPara: null }, { agendadoPara: { lte: new Date() } }],
-    },
-    orderBy: { criadoEm: 'asc' },
-    take: 50,
-  })
-  for (const msg of pendentes) {
-    if (await estaOptOut(msg.telefone)) {
-      await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
-      continue
+  if (drenando) return
+  drenando = true
+  try {
+    const pendentes = await prisma.smsFila.findMany({
+      where: {
+        status: 'pendente',
+        tentativas: { lt: MAX_TENTATIVAS },
+        OR: [{ agendadoPara: null }, { agendadoPara: { lte: new Date() } }],
+      },
+      orderBy: { criadoEm: 'asc' },
+      take: 50,
+    })
+    for (const msg of pendentes) {
+      if (await estaOptOut(msg.telefone)) {
+        await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
+        continue
+      }
+      const ok = await enviarViaGateway(msg.telefone, msg.mensagem)
+      if (ok) {
+        await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date() } })
+        console.log(`[SMS] ✓ ${msg.telefone}`)
+      } else {
+        const tentativas = msg.tentativas + 1
+        await prisma.smsFila.update({ where: { id: msg.id }, data: { tentativas, status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente', erro: 'falha no gateway' } })
+      }
+      await new Promise((r) => setTimeout(r, jitterMs()))
     }
-    const ok = await enviarViaGateway(msg.telefone, msg.mensagem)
-    if (ok) {
-      await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date() } })
-      console.log(`[SMS] ✓ ${msg.telefone}`)
-    } else {
-      const tentativas = msg.tentativas + 1
-      await prisma.smsFila.update({ where: { id: msg.id }, data: { tentativas, status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente', erro: 'falha no gateway' } })
-    }
-    await new Promise((r) => setTimeout(r, jitterMs()))
+  } finally {
+    drenando = false
   }
 }
 

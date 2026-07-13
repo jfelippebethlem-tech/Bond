@@ -106,46 +106,54 @@ function jitterMs(): number {
   return min + Math.floor(Math.random() * (max - min))
 }
 
+let drenando = false
+
 async function drenarFila() {
-  if (conectados.size === 0) return
-  const params = await carregarParametros()
-  const pendentes = await prisma.whatsappFila.findMany({
-    where: {
-      status: 'pendente',
-      tentativas: { lt: MAX_TENTATIVAS },
-      OR: [{ agendadoPara: null }, { agendadoPara: { lte: new Date() } }],
-    },
-    orderBy: { criadoEm: 'asc' },
-    take: 50,
-  })
+  if (drenando) return
+  drenando = true
+  try {
+    if (conectados.size === 0) return
+    const params = await carregarParametros()
+    const pendentes = await prisma.whatsappFila.findMany({
+      where: {
+        status: 'pendente',
+        tentativas: { lt: MAX_TENTATIVAS },
+        OR: [{ agendadoPara: null }, { agendadoPara: { lte: new Date() } }],
+      },
+      orderBy: { criadoEm: 'asc' },
+      take: 50,
+    })
 
-  for (const msg of pendentes) {
-    const numeros = (await carregarNumeros()).filter((n) => conectados.has(n.id))
-    const escolhido = escolherNumero(numeros, new Date(), params)
-    if (!escolhido) break // sem chip elegível agora (teto/janela) — tenta no próximo ciclo
-    const sock = socks.get(escolhido.id)
-    if (!sock) continue
-    if (await estaOptOut(msg.telefone)) {
-      await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
-      continue
-    }
+    for (const msg of pendentes) {
+      const numeros = (await carregarNumeros()).filter((n) => conectados.has(n.id))
+      const escolhido = escolherNumero(numeros, new Date(), params)
+      if (!escolhido) break // sem chip elegível agora (teto/janela) — tenta no próximo ciclo
+      const sock = socks.get(escolhido.id)
+      if (!sock) continue
+      if (await estaOptOut(msg.telefone)) {
+        await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
+        continue
+      }
 
-    const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
-    const texto = microVariacao(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 3))
-    const jid = `${msg.telefone}@s.whatsapp.net`
-    try {
-      await sock.sendMessage(jid, { text: texto })
-      await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), numeroId: escolhido.id } })
-      await registrarEnvio(escolhido.id)
-      console.log(`[WhatsApp] ✓ ${msg.telefone} via ${escolhido.id}`)
-    } catch (e) {
-      const tentativas = msg.tentativas + 1
-      await prisma.whatsappFila.update({
-        where: { id: msg.id },
-        data: { tentativas, status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente', erro: String(e) },
-      })
+      const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
+      const texto = microVariacao(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 3))
+      const jid = `${msg.telefone}@s.whatsapp.net`
+      try {
+        await sock.sendMessage(jid, { text: texto })
+        await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), numeroId: escolhido.id } })
+        await registrarEnvio(escolhido.id)
+        console.log(`[WhatsApp] ✓ ${msg.telefone} via ${escolhido.id}`)
+      } catch (e) {
+        const tentativas = msg.tentativas + 1
+        await prisma.whatsappFila.update({
+          where: { id: msg.id },
+          data: { tentativas, status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente', erro: String(e) },
+        })
+      }
+      await new Promise((r) => setTimeout(r, jitterMs()))
     }
-    await new Promise((r) => setTimeout(r, jitterMs()))
+  } finally {
+    drenando = false
   }
 }
 
