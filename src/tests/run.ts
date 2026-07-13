@@ -501,7 +501,7 @@ async function main() {
   console.log('\n🌐 API disparos — validação')
 
   await test('validarCorpoDisparo exige titulo, mensagem e ao menos 1 canal', async () => {
-    const { validarCorpoDisparo } = await import('@/app/api/disparos/route')
+    const { validarCorpoDisparo } = await import('@/lib/disparo')
     assert(!validarCorpoDisparo({}).ok, 'Vazio deveria falhar')
     assert(!validarCorpoDisparo({ titulo: 't', mensagem: 'm', canais: [] }).ok, 'Sem canal deveria falhar')
     assert(!validarCorpoDisparo({ titulo: 't', mensagem: 'm', canais: ['x'] }).ok, 'Canal inválido deveria falhar')
