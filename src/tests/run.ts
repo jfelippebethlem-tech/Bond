@@ -271,6 +271,27 @@ async function main() {
     await prisma.whatsappFila.delete({ where: { id: f.id } })
   })
 
+  console.log('\n🚫 Opt-out')
+
+  await test('isPalavraOptOut reconhece variações (acento/caixa/espaço)', async () => {
+    const { isPalavraOptOut } = await import('@/lib/optout')
+    for (const p of ['SAIR', 'sair', ' Parar ', 'PARE', 'stop', 'Descadastrar', 'cancelar'])
+      assert(isPalavraOptOut(p), `Deveria reconhecer "${p}"`)
+    for (const p of ['saindo de casa', 'obrigado', 'quero saber mais'])
+      assert(!isPalavraOptOut(p), `NÃO deveria reconhecer "${p}"`)
+  })
+
+  await test('registrarOptOut + estaOptOut roundtrip', async () => {
+    const { registrarOptOut, estaOptOut } = await import('@/lib/optout')
+    const tel = '5521555550000'
+    assert(!(await estaOptOut(tel)), 'Não deveria estar opt-out ainda')
+    await registrarOptOut(tel, 'whatsapp', '__teste__')
+    assert(await estaOptOut(tel), 'Deveria estar opt-out após registrar')
+    // idempotente: registrar de novo não quebra
+    await registrarOptOut(tel, 'whatsapp', '__teste__')
+    await prisma.optOut.deleteMany({ where: { telefone: tel } })
+  })
+
   // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
   console.log('\n📈 Scorer viral (algoritmo.ts)')
 
