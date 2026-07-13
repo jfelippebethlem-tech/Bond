@@ -498,6 +498,17 @@ async function main() {
     await prisma.optOut.deleteMany({ where: { telefone: '5521944443333' } })
   })
 
+  console.log('\n🌐 API disparos — validação')
+
+  await test('validarCorpoDisparo exige titulo, mensagem e ao menos 1 canal', async () => {
+    const { validarCorpoDisparo } = await import('@/app/api/disparos/route')
+    assert(!validarCorpoDisparo({}).ok, 'Vazio deveria falhar')
+    assert(!validarCorpoDisparo({ titulo: 't', mensagem: 'm', canais: [] }).ok, 'Sem canal deveria falhar')
+    assert(!validarCorpoDisparo({ titulo: 't', mensagem: 'm', canais: ['x'] }).ok, 'Canal inválido deveria falhar')
+    const bom = validarCorpoDisparo({ titulo: 't', mensagem: 'm', canais: ['whatsapp'], audiencia: ['apoiador'] })
+    assert(bom.ok && bom.valor?.canais[0] === 'whatsapp', 'Corpo válido deveria passar')
+  })
+
   // ── Resultado final ──────────────────────────────────────────────────────────
   console.log('\n' + '─'.repeat(50))
   if (failed === 0) {
