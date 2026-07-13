@@ -14,6 +14,7 @@
     "whatsapp": "tsx src/agent/whatsapp-worker.ts",
     "sms": "tsx src/agent/sms-worker.ts",
     "test": "tsx src/tests/run.ts",
+    "test:e2e": "tsx src/tests/e2e.ts",
     "launch": "concurrently --prefix-colors \"bgBlue.bold,bgMagenta.bold,bgGreen.bold,bgYellow.bold,bgCyan.bold\" --names \"🏛 APP,🪽 HERMES,🔗 BOND,📱 WPP,📲 SMS\" \"next dev\" \"tsx src/agent/hermes-worker.ts\" \"tsx src/agent/bond-worker.ts\" \"tsx src/agent/whatsapp-worker.ts\" \"tsx src/agent/sms-worker.ts\"",
     "postinstall": "prisma generate"
   },
