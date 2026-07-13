@@ -5,6 +5,7 @@
  */
 import { prisma } from '../lib/db'
 import { enviarViaGateway } from '../lib/sms'
+import { estaOptOut } from '../lib/optout'
 
 const INTERVALO_FILA = 15_000
 const MAX_TENTATIVAS = 3
@@ -25,6 +26,10 @@ async function drenarFila() {
     take: 50,
   })
   for (const msg of pendentes) {
+    if (await estaOptOut(msg.telefone)) {
+      await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
+      continue
+    }
     const ok = await enviarViaGateway(msg.telefone, msg.mensagem)
     if (ok) {
       await prisma.smsFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date() } })

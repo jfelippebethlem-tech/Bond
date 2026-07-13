@@ -11,7 +11,7 @@
 import { prisma } from '../lib/db'
 import { setConfig, personalizar, microVariacao, normalizarTelefone } from '../lib/whatsapp'
 import { escolherNumero, carregarNumeros, carregarParametros, registrarEnvio, marcarBanido } from '../lib/pool'
-import { isPalavraOptOut, registrarOptOut } from '../lib/optout'
+import { isPalavraOptOut, registrarOptOut, estaOptOut } from '../lib/optout'
 import qrcode from 'qrcode'
 import path from 'path'
 
@@ -125,6 +125,10 @@ async function drenarFila() {
     if (!escolhido) break // sem chip elegível agora (teto/janela) — tenta no próximo ciclo
     const sock = socks.get(escolhido.id)
     if (!sock) continue
+    if (await estaOptOut(msg.telefone)) {
+      await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'cancelado' } })
+      continue
+    }
 
     const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
     const texto = microVariacao(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 3))

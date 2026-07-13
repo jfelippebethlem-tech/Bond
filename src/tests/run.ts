@@ -455,6 +455,19 @@ async function main() {
     await prisma.pessoa.delete({ where: { id: p.id } })
   })
 
+  await test('enfileirarWhatsapp não enfileira telefone em opt-out', async () => {
+    const { enfileirarWhatsapp } = await import('@/lib/whatsapp')
+    const { registrarOptOut } = await import('@/lib/optout')
+    const p = await prisma.pessoa.create({ data: { nome: '__optoutenq__', tipo: 'apoiador', telefone: '21955552222', ativo: true } })
+    await registrarOptOut('5521955552222', 'todos', '__teste__')
+    const r = await enfileirarWhatsapp({ telefone: '21955552222', mensagem: 'oi' })
+    assert(!r.ok && r.motivo === 'opt-out', `Deveria recusar opt-out, veio ${JSON.stringify(r)}`)
+    const naFila = await prisma.whatsappFila.count({ where: { telefone: '5521955552222' } })
+    assert(naFila === 0, 'Não deveria ter criado linha na fila')
+    await prisma.optOut.deleteMany({ where: { telefone: '5521955552222' } })
+    await prisma.pessoa.delete({ where: { id: p.id } })
+  })
+
   // ── Disparos multicanal — orquestração ──────────────────────────────────────
   console.log('\n📣 Disparo — orquestração')
 

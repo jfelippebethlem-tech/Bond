@@ -51,6 +51,7 @@ export async function enfileirarWhatsapp(opts: {
 }) {
   const tel = normalizarTelefone(opts.telefone)
   if (!tel) return { ok: false, motivo: 'telefone inválido' }
+  if (await estaOptOut(tel)) return { ok: false, motivo: 'opt-out' }
   await prisma.whatsappFila.create({
     data: {
       telefone: tel,
