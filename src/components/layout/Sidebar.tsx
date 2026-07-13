@@ -37,7 +37,7 @@ const nav = [
   { href: '/apoiadores', icon: UserCheck, label: 'Apoiadores' },
   { href: '/checklist', icon: ClipboardCheck, label: 'Checklist Posts' },
   { href: '/inteligencia', icon: Sparkles, label: 'Inteligência' },
-  { href: '/whatsapp', icon: MessageSquare, label: 'WhatsApp' },
+  { href: '/disparos', icon: MessageSquare, label: 'Disparos' },
   { href: '/campanha', icon: TrendingUp, label: 'Campanha' },
   { href: '/bond', icon: Link2, label: 'Bond — Social' },
   { href: '/interacoes', icon: Activity, label: 'Interações' },
