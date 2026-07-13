@@ -11,6 +11,12 @@
 > - **UI** `/disparos`: `try/catch` nos fetch; checkbox SMS desabilitado e auto-desmarcado quando o gateway está offline. `sms-status` = `force-dynamic` (evita congelar o status no build).
 > - `erro` limpo ao suceder após falha (ambos workers).
 >
+> ### Testes (unit + end-to-end "humano")
+> - **Unitário:** `DATABASE_URL="file:./dev-disparos.db" npm test` — 53 testes (lógica pura + camada de DB).
+> - **End-to-end:** `DATABASE_URL="file:./dev-disparos.db" npm run test:e2e` (`src/tests/e2e.ts`) — 9 cenários que exercitam o fluxo real de um operador de campanha: sobe um **gateway SMS HTTP emulado** (capcom6-like, exige Basic auth), dispara pela **API real** (`POST /api/disparos`), drena **WhatsApp** (socket injetado, sem Baileys) e **SMS** (POST real no gateway emulado), e valida opt-out nas **3 vias** (enqueue, ponto de envio, inbound "PARAR"), rotação/teto do pool, personalização `{nome}` + spintax, `sms-status` online e detecção de ban.
+>   - Para testabilidade, o drain foi extraído para `src/lib/whatsappDrain.ts` e `src/lib/smsDrain.ts` (os workers viraram cascas finas que injetam o envio real).
+>   - **Bug real encontrado pelo e2e (corrigido):** `registrarEnvio` tratava `zeradoEm=null` como virada de dia → chip novo pulava o aquecimento do dia 1 (nível 1→2 no 1º envio) e quebrava a rotação do pool. Agora a rampa só avança numa virada de dia REAL.
+>
 > ### Runbook de deploy (pendências OPERACIONAIS, não código)
 > 1. `db:push` no `prod.db` real (4 tabelas novas — aditivo).
 > 2. Matar o whatsapp-worker legado antes de subir o pool (senão os dois drenam a mesma fila).
