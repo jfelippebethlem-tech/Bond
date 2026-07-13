@@ -232,6 +232,45 @@ async function main() {
     // não falha — IA é opcional
   })
 
+  // ── 6. Disparos multicanal — schema ─────────────────────────────────────────
+  console.log('\n📣 Disparos — schema')
+
+  await test('CRUD WhatsappNumero', async () => {
+    const n = await prisma.whatsappNumero.create({
+      data: { rotulo: '__teste__chip__', sessionPath: '.whatsapp-auth/__t__' },
+    })
+    assert(n.status === 'aquecendo', `Status padrão incorreto: ${n.status}`)
+    assert(n.tetoDiario === 200, `Teto padrão incorreto: ${n.tetoDiario}`)
+    assert(n.enviadosHoje === 0, 'enviadosHoje devia iniciar 0')
+    await prisma.whatsappNumero.delete({ where: { id: n.id } })
+  })
+
+  await test('CRUD SmsFila', async () => {
+    const s = await prisma.smsFila.create({ data: { telefone: '5521999998888', mensagem: '__t__' } })
+    assert(s.status === 'pendente', `Status padrão incorreto: ${s.status}`)
+    await prisma.smsFila.delete({ where: { id: s.id } })
+  })
+
+  await test('OptOut é único por telefone', async () => {
+    const o = await prisma.optOut.create({ data: { telefone: '5521000000000' } })
+    let violou = false
+    try { await prisma.optOut.create({ data: { telefone: '5521000000000' } }) } catch { violou = true }
+    assert(violou, 'Telefone duplicado em OptOut deveria falhar (unique)')
+    await prisma.optOut.delete({ where: { id: o.id } })
+  })
+
+  await test('CRUD Disparo', async () => {
+    const d = await prisma.disparo.create({ data: { titulo: '__t__', mensagem: 'oi', canais: 'whatsapp', audiencia: 'apoiador' } })
+    assert(d.enfileirados === 0, 'enfileirados devia iniciar 0')
+    await prisma.disparo.delete({ where: { id: d.id } })
+  })
+
+  await test('WhatsappFila aceita numeroId e campanhaId', async () => {
+    const f = await prisma.whatsappFila.create({ data: { telefone: '5521999998888', mensagem: '__t__', numeroId: 'x', campanhaId: 'y' } })
+    assert(f.numeroId === 'x' && f.campanhaId === 'y', 'Colunas novas não persistiram')
+    await prisma.whatsappFila.delete({ where: { id: f.id } })
+  })
+
   // ── Scorer viral (algoritmo puro — fonte única, Fase 1.2) ───────────────────
   console.log('\n📈 Scorer viral (algoritmo.ts)')
 

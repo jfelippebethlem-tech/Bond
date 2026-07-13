@@ -290,6 +290,8 @@ model WhatsappFila {
   erro         String?
   pessoaId     String?   // apoiador destinatário, se houver
   referencia   String?   // ex: postId relacionado
+  numeroId     String?
+  campanhaId   String?
   tentativas   Int       @default(0)
   agendadoPara DateTime?
   criadoEm    DateTime  @default(now())
@@ -363,4 +365,51 @@ model BondTendencia {
   capturadoEm DateTime @default(now())
 
   @@index([capturadoEm])
+}
+
+model WhatsappNumero {
+  id               String    @id @default(cuid())
+  rotulo           String
+  status           String    @default("aquecendo") // "aquecendo"|"ativo"|"pausado"|"banido"
+  sessionPath      String    @unique
+  tetoDiario       Int       @default(200)
+  nivelAquecimento Int       @default(1)
+  enviadosHoje     Int       @default(0)
+  zeradoEm         DateTime?
+  ultimoEnvioEm    DateTime?
+  criadoEm         DateTime  @default(now())
+}
+
+model SmsFila {
+  id           String    @id @default(cuid())
+  telefone     String
+  mensagem     String
+  tipo         String    @default("notificacao")
+  status       String    @default("pendente")
+  erro         String?
+  pessoaId     String?
+  referencia   String?
+  tentativas   Int       @default(0)
+  agendadoPara DateTime?
+  criadoEm     DateTime  @default(now())
+  enviadoEm    DateTime?
+}
+
+model OptOut {
+  id        String   @id @default(cuid())
+  telefone  String   @unique
+  canal     String   @default("todos")
+  origem    String?
+  criadoEm  DateTime @default(now())
+}
+
+model Disparo {
+  id           String   @id @default(cuid())
+  titulo       String
+  mensagem     String
+  canais       String
+  audiencia    String
+  totalAlvo    Int      @default(0)
+  enfileirados Int      @default(0)
+  criadoEm     DateTime @default(now())
 }
