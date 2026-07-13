@@ -42,9 +42,9 @@ export async function enfileirarSms(opts: { telefone: string; mensagem: string; 
   return { ok: true as const, telefone: tel }
 }
 
-export async function enfileirarBroadcastSms(mensagem: string, tipo = 'broadcast', campanhaId?: string) {
+export async function enfileirarBroadcastSms(mensagem: string, tipo = 'broadcast', campanhaId?: string, audiencia: string[] = ['apoiador', 'coordenador']) {
   const apoiadores = await prisma.pessoa.findMany({
-    where: { tipo: { in: ['apoiador', 'coordenador'] }, ativo: true, telefone: { not: null } },
+    where: { tipo: { in: audiencia }, ativo: true, telefone: { not: null } },
     select: { id: true, telefone: true },
   })
   let enfileirados = 0

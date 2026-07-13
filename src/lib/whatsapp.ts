@@ -71,9 +71,10 @@ export async function enfileirarBroadcast(
   tipo: TipoMensagem = 'broadcast',
   referencia?: string,
   campanhaId?: string,
+  audiencia: string[] = ['apoiador', 'coordenador'],
 ) {
   const apoiadores = await prisma.pessoa.findMany({
-    where: { tipo: { in: ['apoiador', 'coordenador'] }, ativo: true, telefone: { not: null } },
+    where: { tipo: { in: audiencia }, ativo: true, telefone: { not: null } },
     select: { id: true, telefone: true },
   })
   let enfileirados = 0

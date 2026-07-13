@@ -35,11 +35,11 @@ export async function dispararCampanha(opts: {
   let whatsapp = 0
   let sms = 0
   if (opts.canais.includes('whatsapp')) {
-    const r = await enfileirarBroadcast(opts.mensagem, 'broadcast', undefined, disparo.id)
+    const r = await enfileirarBroadcast(opts.mensagem, 'broadcast', undefined, disparo.id, opts.audiencia)
     whatsapp = r.enfileirados
   }
   if (opts.canais.includes('sms')) {
-    const r = await enfileirarBroadcastSms(opts.mensagem, 'broadcast', disparo.id)
+    const r = await enfileirarBroadcastSms(opts.mensagem, 'broadcast', disparo.id, opts.audiencia)
     sms = r.enfileirados
   }
   await prisma.disparo.update({ where: { id: disparo.id }, data: { enfileirados: whatsapp + sms } })

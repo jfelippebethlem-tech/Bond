@@ -508,6 +508,23 @@ async function main() {
     await prisma.pessoa.delete({ where: { id: p.id } })
   })
 
+  await test('dispararCampanha respeita a audiencia escolhida (não vaza para outros tipos)', async () => {
+    const { dispararCampanha } = await import('@/lib/disparo')
+    const apoiador = await prisma.pessoa.create({ data: { nome: '__audApoiador__', tipo: 'apoiador', telefone: '21977776666', ativo: true } })
+    const coordenador = await prisma.pessoa.create({ data: { nome: '__audCoord__', tipo: 'coordenador', telefone: '21966665555', ativo: true } })
+    const r = await dispararCampanha({ titulo: '__audcamp__', mensagem: 'Olá', audiencia: ['apoiador'], canais: ['whatsapp'] })
+    assert(r.whatsapp === 1, `Deveria enfileirar só 1 (apoiador), veio ${r.whatsapp}`)
+    const naFilaApoiador = await prisma.whatsappFila.count({ where: { telefone: '5521977776666' } })
+    const naFilaCoord = await prisma.whatsappFila.count({ where: { telefone: '5521966665555' } })
+    assert(naFilaApoiador === 1, `Apoiador deveria estar na fila, veio ${naFilaApoiador}`)
+    assert(naFilaCoord === 0, `Coordenador NÃO deveria estar na fila, veio ${naFilaCoord}`)
+    // limpeza
+    await prisma.whatsappFila.deleteMany({ where: { campanhaId: r.disparoId } })
+    await prisma.disparo.delete({ where: { id: r.disparoId } })
+    await prisma.pessoa.delete({ where: { id: apoiador.id } })
+    await prisma.pessoa.delete({ where: { id: coordenador.id } })
+  })
+
   // ── SMS ──────────────────────────────────────────────────────────────────────
   console.log('\n📲 SMS — gateway')
 
