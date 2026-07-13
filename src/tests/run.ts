@@ -436,23 +436,21 @@ async function main() {
 
   await test('enfileirarBroadcast pula telefones em opt-out', async () => {
     const { enfileirarBroadcast } = await import('@/lib/whatsapp')
-    // Criar pessoa com telefone específico
-    const p = await prisma.pessoa.create({
-      data: { nome: '__optoutbc__', tipo: 'apoiador', telefone: '21955551234', ativo: true }
-    })
+    const p = await prisma.pessoa.create({ data: { nome: '__optoutbc__', tipo: 'apoiador', telefone: '21955551234', ativo: true } })
     const { registrarOptOut } = await import('@/lib/optout')
-    // Registrar opt-out (telefone já normalizado)
+    // Controle positivo: SEM opt-out, o telefone É enfileirado
+    await enfileirarBroadcast('msg teste', 'broadcast', undefined, '__camp_pre__')
+    const semOptOut = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
+    assert(semOptOut >= 1, `Sem opt-out o telefone deveria ser enfileirado (veio ${semOptOut})`)
+    await prisma.whatsappFila.deleteMany({ where: { campanhaId: '__camp_pre__' } })
+    // Com opt-out, o telefone é excluído
     await registrarOptOut('5521955551234', 'todos', '__teste__')
-    // Contar antes de enfileirar (deve ser 0)
-    const antesCount = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
-    assert(antesCount === 0, `Deveria ter 0 antes de enfileirar, tinha ${antesCount}`)
-    // Enfileirar broadcast
     const r = await enfileirarBroadcast('msg teste', 'broadcast', undefined, '__camp__')
-    // Contar depois de enfileirar
-    const depoisCount = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
-    assert(depoisCount === 0, `Telefone em opt-out não deveria ser enfileirado, foi enfileirado ${depoisCount}x`)
+    const naFila = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
+    assert(naFila === 0, 'Telefone em opt-out não deveria ser enfileirado')
     // limpeza
     await prisma.whatsappFila.deleteMany({ where: { campanhaId: '__camp__' } })
+    await prisma.whatsappFila.deleteMany({ where: { campanhaId: '__camp_pre__' } })
     await prisma.optOut.deleteMany({ where: { telefone: '5521955551234' } })
     await prisma.pessoa.delete({ where: { id: p.id } })
   })
