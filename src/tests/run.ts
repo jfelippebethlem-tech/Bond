@@ -416,6 +416,47 @@ async function main() {
     assert(r.scoreTotal === 0, `Score esperado 0 com gate, veio ${r.scoreTotal}`)
   })
 
+  // ── WhatsApp — conteúdo ──────────────────────────────────────────────────────
+  console.log('\n✉️  WhatsApp — conteúdo')
+
+  await test('personalizar troca {nome} pelo primeiro nome', async () => {
+    const { personalizar } = await import('@/lib/whatsapp')
+    assert(personalizar('Oi {nome}!', 'João Silva') === 'Oi João!', 'Substituição de {nome} falhou')
+    assert(personalizar('Olá {nome}', '') === 'Olá ', 'Nome vazio deveria virar string vazia')
+    assert(personalizar('Sem token', 'Maria') === 'Sem token', 'Sem {nome} não deveria mudar')
+  })
+
+  await test('microVariacao é identidade no seed 0 e varia no resto (mesmo conteúdo visível)', async () => {
+    const { microVariacao } = await import('@/lib/whatsapp')
+    assert(microVariacao('oi', 0) === 'oi', 'seed 0 deveria ser idêntico')
+    const v = microVariacao('oi', 1)
+    assert(v !== 'oi', 'seed 1 deveria variar')
+    assert(v.replace(/​/g, '') === 'oi', 'variação só pode adicionar caracteres invisíveis')
+  })
+
+  await test('enfileirarBroadcast pula telefones em opt-out', async () => {
+    const { enfileirarBroadcast } = await import('@/lib/whatsapp')
+    // Criar pessoa com telefone específico
+    const p = await prisma.pessoa.create({
+      data: { nome: '__optoutbc__', tipo: 'apoiador', telefone: '21955551234', ativo: true }
+    })
+    const { registrarOptOut } = await import('@/lib/optout')
+    // Registrar opt-out (telefone já normalizado)
+    await registrarOptOut('5521955551234', 'todos', '__teste__')
+    // Contar antes de enfileirar (deve ser 0)
+    const antesCount = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
+    assert(antesCount === 0, `Deveria ter 0 antes de enfileirar, tinha ${antesCount}`)
+    // Enfileirar broadcast
+    const r = await enfileirarBroadcast('msg teste', 'broadcast', undefined, '__camp__')
+    // Contar depois de enfileirar
+    const depoisCount = await prisma.whatsappFila.count({ where: { telefone: '5521955551234' } })
+    assert(depoisCount === 0, `Telefone em opt-out não deveria ser enfileirado, foi enfileirado ${depoisCount}x`)
+    // limpeza
+    await prisma.whatsappFila.deleteMany({ where: { campanhaId: '__camp__' } })
+    await prisma.optOut.deleteMany({ where: { telefone: '5521955551234' } })
+    await prisma.pessoa.delete({ where: { id: p.id } })
+  })
+
   // ── Resultado final ──────────────────────────────────────────────────────────
   console.log('\n' + '─'.repeat(50))
   if (failed === 0) {

@@ -8,6 +8,9 @@
  * Configuracao (chave: "whatsapp_status" e "whatsapp_qr").
  */
 import { prisma } from './db'
+import { estaOptOut } from './optout'
+
+const INVISIVEL = '​' // zero-width space — varia o conteúdo sem alterar o texto visível
 
 // Normaliza telefone brasileiro para o formato do WhatsApp (DDI 55 + DDD + número)
 export function normalizarTelefone(tel?: string | null): string | null {
@@ -21,6 +24,18 @@ export function normalizarTelefone(tel?: string | null): string | null {
   // Esperado: 55 (2) + DDD (2) + número (8 ou 9) => 12 ou 13 dígitos
   if (n.length < 12 || n.length > 13) return null
   return n
+}
+
+/** Substitui {nome} pelo primeiro nome (string vazia se não houver nome). */
+export function personalizar(texto: string, nome?: string | null): string {
+  const primeiro = (nome || '').trim().split(/\s+/)[0] || ''
+  return texto.replace(/\{nome\}/g, primeiro)
+}
+
+/** Micro-variação determinística (0 = idêntico) para evitar mensagens byte-a-byte iguais em massa. */
+export function microVariacao(texto: string, seed: number): string {
+  const n = ((seed % 3) + 3) % 3
+  return texto + INVISIVEL.repeat(n)
 }
 
 export type TipoMensagem = 'notificacao' | 'cobranca' | 'nps' | 'conquista' | 'broadcast' | 'alerta'
@@ -50,15 +65,25 @@ export async function enfileirarWhatsapp(opts: {
 }
 
 // Envia em massa para todos os apoiadores com telefone (broadcast)
-export async function enfileirarBroadcast(mensagem: string, tipo: TipoMensagem = 'broadcast', referencia?: string) {
+export async function enfileirarBroadcast(
+  mensagem: string,
+  tipo: TipoMensagem = 'broadcast',
+  referencia?: string,
+  campanhaId?: string,
+) {
   const apoiadores = await prisma.pessoa.findMany({
     where: { tipo: { in: ['apoiador', 'coordenador'] }, ativo: true, telefone: { not: null } },
     select: { id: true, telefone: true },
   })
   let enfileirados = 0
   for (const p of apoiadores) {
-    const r = await enfileirarWhatsapp({ telefone: p.telefone!, mensagem, tipo, pessoaId: p.id, referencia })
-    if (r.ok) enfileirados++
+    const tel = normalizarTelefone(p.telefone!)
+    if (!tel) continue
+    if (await estaOptOut(tel)) continue
+    await prisma.whatsappFila.create({
+      data: { telefone: tel, mensagem, tipo, pessoaId: p.id, referencia, campanhaId },
+    })
+    enfileirados++
   }
   return { enfileirados, totalApoiadores: apoiadores.length }
 }
