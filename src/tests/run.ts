@@ -363,6 +363,28 @@ async function main() {
     await prisma.whatsappNumero.delete({ where: { id: n.id } })
   })
 
+  await test('registrarEnvio avança nivelAquecimento no reset diário, com teto na rampa', async () => {
+    const { registrarEnvio } = await import('@/lib/pool')
+    const { PARAMS_PADRAO } = await import('@/lib/pool')
+    const ontem = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    const n1 = await prisma.whatsappNumero.create({
+      data: { rotulo: '__t_ramp1__', sessionPath: `.whatsapp-auth/__t_ramp1_${Date.now()}__`, nivelAquecimento: 2, zeradoEm: ontem },
+    })
+    await registrarEnvio(n1.id)
+    const d1 = await prisma.whatsappNumero.findUnique({ where: { id: n1.id } })
+    assert(d1?.nivelAquecimento === 3, `Esperado nivelAquecimento 3, veio ${d1?.nivelAquecimento}`)
+    assert(d1?.enviadosHoje === 1, `Esperado enviadosHoje 1, veio ${d1?.enviadosHoje}`)
+    await prisma.whatsappNumero.delete({ where: { id: n1.id } })
+
+    const n2 = await prisma.whatsappNumero.create({
+      data: { rotulo: '__t_ramp2__', sessionPath: `.whatsapp-auth/__t_ramp2_${Date.now()}__`, nivelAquecimento: PARAMS_PADRAO.rampa.length, zeradoEm: ontem },
+    })
+    await registrarEnvio(n2.id)
+    const d2 = await prisma.whatsappNumero.findUnique({ where: { id: n2.id } })
+    assert(d2?.nivelAquecimento === PARAMS_PADRAO.rampa.length, `Não deveria passar do teto (${PARAMS_PADRAO.rampa.length}), veio ${d2?.nivelAquecimento}`)
+    await prisma.whatsappNumero.delete({ where: { id: n2.id } })
+  })
+
   await test('marcarBanido muda status', async () => {
     const { marcarBanido } = await import('@/lib/pool')
     const sessionPath = `.whatsapp-auth/__t_ban_${Date.now()}__`

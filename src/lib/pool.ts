@@ -85,6 +85,7 @@ export async function registrarEnvio(id: string, agora: Date = new Date()): Prom
       enviadosHoje: reset ? 1 : n.enviadosHoje + 1,
       zeradoEm: reset ? agora : n.zeradoEm,
       ultimoEnvioEm: agora,
+      nivelAquecimento: reset ? Math.min(n.nivelAquecimento + 1, PARAMS_PADRAO.rampa.length) : n.nivelAquecimento,
     },
   })
 }
