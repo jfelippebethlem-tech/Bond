@@ -455,6 +455,24 @@ async function main() {
     await prisma.pessoa.delete({ where: { id: p.id } })
   })
 
+  // ── Disparos multicanal — orquestração ──────────────────────────────────────
+  console.log('\n📣 Disparo — orquestração')
+
+  await test('dispararCampanha faz fan-out nos canais e rastreia Disparo', async () => {
+    const { dispararCampanha } = await import('@/lib/disparo')
+    const p = await prisma.pessoa.create({ data: { nome: 'Fulano Teste', tipo: 'apoiador', telefone: '21988887777', ativo: true } })
+    const r = await dispararCampanha({ titulo: '__camp__', mensagem: 'Olá {nome}', audiencia: ['apoiador'], canais: ['whatsapp', 'sms'] })
+    assert(r.whatsapp >= 1, 'Deveria enfileirar ao menos 1 no WhatsApp')
+    assert(r.sms >= 1, 'Deveria enfileirar ao menos 1 no SMS')
+    const d = await prisma.disparo.findUnique({ where: { id: r.disparoId } })
+    assert(d?.canais === 'whatsapp,sms', `canais incorreto: ${d?.canais}`)
+    // limpeza
+    await prisma.whatsappFila.deleteMany({ where: { telefone: '5521988887777' } })
+    await prisma.smsFila.deleteMany({ where: { telefone: '5521988887777' } })
+    await prisma.disparo.delete({ where: { id: r.disparoId } })
+    await prisma.pessoa.delete({ where: { id: p.id } })
+  })
+
   // ── SMS ──────────────────────────────────────────────────────────────────────
   console.log('\n📲 SMS — gateway')
 
