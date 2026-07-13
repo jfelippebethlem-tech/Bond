@@ -1,152 +1,156 @@
 /**
- * WhatsApp Worker — conexão GRATUITA via Baileys (WhatsApp Web).
- * Execute: npx tsx src/agent/whatsapp-worker.ts  ou  npm run whatsapp
+ * WhatsApp Worker — POOL de chips (Baileys, grátis) com blindagem anti-ban.
+ * Execute: npm run whatsapp
  *
- * Como conectar (uma vez):
- *  1. Inicie o worker.
- *  2. Abra a página /whatsapp no app — um QR Code aparece.
- *  3. No celular: WhatsApp > Aparelhos conectados > Conectar aparelho > escaneie.
- *  4. A sessão fica salva em ./.whatsapp-auth (não commitar).
- *
- * Sem custo de API. Envia as mensagens pendentes da tabela WhatsappFila com
- * intervalo seguro entre mensagens para evitar bloqueio.
+ * Cada linha de WhatsappNumero vira uma conexão Baileys com sessão própria em
+ * ./.whatsapp-auth/<numeroId>. A fila WhatsappFila é drenada escolhendo o chip
+ * pelo pool (rampa de aquecimento, teto diário, janela de horário, rotação),
+ * com jitter humano entre envios e micro-variação de conteúdo. Opt-out inbound
+ * (SAIR/PARAR/...) é respeitado. Chip deslogado é marcado como banido e sai do pool.
  */
 import { prisma } from '../lib/db'
-import { setConfig } from '../lib/whatsapp'
+import { setConfig, personalizar, microVariacao, normalizarTelefone } from '../lib/whatsapp'
+import { escolherNumero, carregarNumeros, carregarParametros, registrarEnvio, marcarBanido } from '../lib/pool'
+import { isPalavraOptOut, registrarOptOut } from '../lib/optout'
 import qrcode from 'qrcode'
 import path from 'path'
 
-const AUTH_DIR = path.resolve(process.cwd(), '.whatsapp-auth')
-const INTERVALO_ENVIO = 4000   // 4s entre mensagens (anti-bloqueio)
-const INTERVALO_FILA = 15_000  // verifica a fila a cada 15s
+const INTERVALO_FILA = 15_000
 const MAX_TENTATIVAS = 3
 
-console.log('📱 WhatsApp Worker iniciando (Baileys — grátis)...')
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let sock: any = null
-let conectado = false
+const socks = new Map<string, any>()      // numeroId -> socket
+const conectados = new Set<string>()       // numeroIds conectados
 
-async function iniciarBaileys() {
-  // Import dinâmico: nunca entra no build do Next.js
+async function alerta(texto: string) {
+  try {
+    const mod = await import('../bot/telegram')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fn = (mod as any).enviarTelegram
+    if (typeof fn === 'function') { await fn(texto); return }
+  } catch { /* ignora */ }
+  console.error('[WhatsApp][ALERTA]', texto)
+}
+
+async function iniciarChip(numeroId: string, rotulo: string) {
   const baileys = await import('@whiskeysockets/baileys')
   const makeWASocket = baileys.default
   const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = baileys
 
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR)
+  const authDir = path.resolve(process.cwd(), '.whatsapp-auth', numeroId)
+  const { state, saveCreds } = await useMultiFileAuthState(authDir)
   const { version } = await fetchLatestBaileysVersion()
 
-  sock = makeWASocket({
+  const sock = makeWASocket({
     version,
     auth: state,
     printQRInTerminal: false,
-    // logger silencioso
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     logger: { level: 'silent', child: () => ({ level: 'silent', error() {}, warn() {}, info() {}, debug() {}, trace() {}, fatal() {} }), error() {}, warn() {}, info() {}, debug() {}, trace() {}, fatal() {} } as any,
   })
-
+  socks.set(numeroId, sock)
   sock.ev.on('creds.update', saveCreds)
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   sock.ev.on('connection.update', async (update: any) => {
     const { connection, lastDisconnect, qr } = update
-
     if (qr) {
-      // Gera QR como data URL para exibir na página /whatsapp
-      try {
-        const dataUrl = await qrcode.toDataURL(qr)
-        await setConfig('whatsapp_qr', dataUrl)
-        await setConfig('whatsapp_status', 'aguardando_qr')
-        await setConfig('whatsapp_status_em', new Date().toISOString())
-        console.log('[WhatsApp] 📷 QR Code gerado — escaneie em /whatsapp')
-      } catch (e) {
-        console.error('[WhatsApp] erro ao gerar QR:', e)
-      }
+      const dataUrl = await qrcode.toDataURL(qr)
+      await setConfig(`whatsapp_qr_${numeroId}`, dataUrl)
+      await setConfig(`whatsapp_status_${numeroId}`, 'aguardando_qr')
     }
-
     if (connection === 'open') {
-      conectado = true
-      await setConfig('whatsapp_status', 'conectado')
-      await setConfig('whatsapp_qr', '')
-      await setConfig('whatsapp_status_em', new Date().toISOString())
-      console.log('[WhatsApp] ✓ Conectado!')
+      conectados.add(numeroId)
+      await setConfig(`whatsapp_qr_${numeroId}`, '')
+      await setConfig(`whatsapp_status_${numeroId}`, 'conectado')
+      await prisma.whatsappNumero.update({ where: { id: numeroId }, data: { status: 'ativo' } }).catch(() => {})
+      console.log(`[WhatsApp] ✓ chip "${rotulo}" conectado`)
     }
-
     if (connection === 'close') {
-      conectado = false
+      conectados.delete(numeroId)
       const code = lastDisconnect?.error?.output?.statusCode
-      const deveReconectar = code !== DisconnectReason.loggedOut
-      await setConfig('whatsapp_status', deveReconectar ? 'reconectando' : 'desconectado')
-      await setConfig('whatsapp_status_em', new Date().toISOString())
-      console.log(`[WhatsApp] conexão fechada (code ${code}). Reconectar: ${deveReconectar}`)
-      if (deveReconectar) {
-        setTimeout(() => iniciarBaileys().catch(e => console.error('[WhatsApp] erro reconexão:', e)), 5000)
+      const deslogado = code === DisconnectReason.loggedOut
+      await setConfig(`whatsapp_status_${numeroId}`, deslogado ? 'desconectado' : 'reconectando')
+      if (deslogado) {
+        await marcarBanido(numeroId)
+        await alerta(`⚠️ Chip WhatsApp "${rotulo}" foi deslogado/banido e saiu do pool.`)
       } else {
-        // Logout: limpa credenciais para permitir novo pareamento
-        await setConfig('whatsapp_qr', '')
+        setTimeout(() => iniciarChip(numeroId, rotulo).catch((e) => console.error(e)), 5000)
       }
     }
   })
+
+  // Opt-out inbound
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  sock.ev.on('messages.upsert', async (m: any) => {
+    try {
+      for (const msg of m.messages || []) {
+        if (msg.key?.fromMe) continue
+        const texto = msg.message?.conversation || msg.message?.extendedTextMessage?.text || ''
+        if (!texto || !isPalavraOptOut(texto)) continue
+        const jid: string = msg.key?.remoteJid || ''
+        const tel = normalizarTelefone(jid.split('@')[0])
+        if (!tel) continue
+        await registrarOptOut(tel, 'whatsapp', 'SAIR via whatsapp')
+        await sock.sendMessage(jid, { text: 'Pronto, você não receberá mais mensagens. 👋' })
+        console.log(`[WhatsApp] opt-out registrado: ${tel}`)
+      }
+    } catch (e) { console.error('[WhatsApp] erro opt-out inbound:', e) }
+  })
 }
 
-async function enviarMensagem(telefone: string, mensagem: string): Promise<boolean> {
-  if (!sock || !conectado) return false
-  const jid = `${telefone}@s.whatsapp.net`
-  try {
-    await sock.sendMessage(jid, { text: mensagem })
-    return true
-  } catch (e) {
-    console.error(`[WhatsApp] erro ao enviar p/ ${telefone}:`, e)
-    return false
-  }
+function jitterMs(): number {
+  const min = 8_000, max = 40_000
+  return min + Math.floor(Math.random() * (max - min))
 }
 
 async function drenarFila() {
-  if (!conectado) return
-
-  const agora = new Date()
+  if (conectados.size === 0) return
+  const params = await carregarParametros()
   const pendentes = await prisma.whatsappFila.findMany({
     where: {
       status: 'pendente',
       tentativas: { lt: MAX_TENTATIVAS },
-      OR: [{ agendadoPara: null }, { agendadoPara: { lte: agora } }],
+      OR: [{ agendadoPara: null }, { agendadoPara: { lte: new Date() } }],
     },
     orderBy: { criadoEm: 'asc' },
-    take: 20,
+    take: 50,
   })
 
   for (const msg of pendentes) {
-    const ok = await enviarMensagem(msg.telefone, msg.mensagem)
-    if (ok) {
-      await prisma.whatsappFila.update({
-        where: { id: msg.id },
-        data: { status: 'enviado', enviadoEm: new Date() },
-      })
-      console.log(`[WhatsApp] ✓ enviado p/ ${msg.telefone} (${msg.tipo})`)
-    } else {
+    const numeros = (await carregarNumeros()).filter((n) => conectados.has(n.id))
+    const escolhido = escolherNumero(numeros, new Date(), params)
+    if (!escolhido) break // sem chip elegível agora (teto/janela) — tenta no próximo ciclo
+    const sock = socks.get(escolhido.id)
+    if (!sock) continue
+
+    const pessoa = msg.pessoaId ? await prisma.pessoa.findUnique({ where: { id: msg.pessoaId }, select: { nome: true } }) : null
+    const texto = microVariacao(personalizar(msg.mensagem, pessoa?.nome), Math.floor(Math.random() * 3))
+    const jid = `${msg.telefone}@s.whatsapp.net`
+    try {
+      await sock.sendMessage(jid, { text: texto })
+      await prisma.whatsappFila.update({ where: { id: msg.id }, data: { status: 'enviado', enviadoEm: new Date(), numeroId: escolhido.id } })
+      await registrarEnvio(escolhido.id)
+      console.log(`[WhatsApp] ✓ ${msg.telefone} via ${escolhido.id}`)
+    } catch (e) {
       const tentativas = msg.tentativas + 1
       await prisma.whatsappFila.update({
         where: { id: msg.id },
-        data: {
-          tentativas,
-          status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente',
-          erro: 'falha no envio',
-        },
+        data: { tentativas, status: tentativas >= MAX_TENTATIVAS ? 'erro' : 'pendente', erro: String(e) },
       })
     }
-    // intervalo anti-bloqueio entre mensagens
-    await new Promise(r => setTimeout(r, INTERVALO_ENVIO))
+    await new Promise((r) => setTimeout(r, jitterMs()))
   }
 }
 
 async function main() {
-  await setConfig('whatsapp_status', 'iniciando')
-  await iniciarBaileys()
-  setInterval(() => { drenarFila().catch(e => console.error('[WhatsApp] erro fila:', e)) }, INTERVALO_FILA)
-  console.log('[WhatsApp] ✓ Rodando. Verificando fila a cada 15s.\n')
+  const numeros = await prisma.whatsappNumero.findMany({ where: { status: { not: 'banido' } } })
+  if (numeros.length === 0) {
+    console.log('[WhatsApp] ⚠️ Nenhum chip cadastrado. Cadastre em /disparos (aba Pool) e reinicie.')
+  }
+  for (const n of numeros) await iniciarChip(n.id, n.rotulo)
+  setInterval(() => { drenarFila().catch((e) => console.error('[WhatsApp] erro fila:', e)) }, INTERVALO_FILA)
+  console.log(`[WhatsApp] ✓ Pool rodando (${numeros.length} chip[s]). Fila a cada 15s.\n`)
 }
 
-main().catch(err => {
-  console.error('[WhatsApp] Erro fatal:', err)
-  process.exit(1)
-})
+main().catch((err) => { console.error('[WhatsApp] Erro fatal:', err); process.exit(1) })
