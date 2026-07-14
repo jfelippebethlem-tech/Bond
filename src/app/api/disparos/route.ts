@@ -7,7 +7,16 @@ export async function GET() {
     prisma.disparo.findMany({ orderBy: { criadoEm: 'desc' }, take: 30 }),
     prisma.whatsappNumero.findMany({ orderBy: { criadoEm: 'asc' } }),
   ])
-  return NextResponse.json({ campanhas, numeros })
+  // Estado de conexão + QR por chip (o worker grava em Configuracao whatsapp_status_/qr_<id>)
+  const chaves = numeros.flatMap((n) => [`whatsapp_status_${n.id}`, `whatsapp_qr_${n.id}`])
+  const configs = chaves.length ? await prisma.configuracao.findMany({ where: { chave: { in: chaves } } }) : []
+  const cfg = Object.fromEntries(configs.map((c) => [c.chave, c.valor]))
+  const numerosComConexao = numeros.map((n) => ({
+    ...n,
+    conexao: cfg[`whatsapp_status_${n.id}`] || 'aguardando worker',
+    qr: cfg[`whatsapp_qr_${n.id}`] || null,
+  }))
+  return NextResponse.json({ campanhas, numeros: numerosComConexao })
 }
 
 export async function POST(req: Request) {

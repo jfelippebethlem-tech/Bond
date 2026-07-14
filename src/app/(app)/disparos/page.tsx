@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 
-type Numero = { id: string; rotulo: string; status: string; enviadosHoje: number; tetoDiario: number; nivelAquecimento: number }
+type Numero = { id: string; rotulo: string; status: string; enviadosHoje: number; tetoDiario: number; nivelAquecimento: number; conexao: string; qr: string | null }
 type Campanha = { id: string; titulo: string; canais: string; totalAlvo: number; enfileirados: number; criadoEm: string }
 
 export default function DisparosPage() {
@@ -25,7 +25,12 @@ export default function DisparosPage() {
       setMsg('Erro ao carregar dados (rede/servidor).')
     }
   }
-  useEffect(() => { carregar() }, [])
+  // Polling: o QR do Baileys rotaciona (~20s) e a conexão muda ao escanear.
+  useEffect(() => {
+    carregar()
+    const t = setInterval(carregar, 15000)
+    return () => clearInterval(t)
+  }, [])
 
   // Se o gateway SMS estiver offline, não deixa o canal SMS selecionado.
   useEffect(() => { if (smsOnline === false) setCanais((cur) => cur.filter((c) => c !== 'sms')) }, [smsOnline])
@@ -81,19 +86,28 @@ export default function DisparosPage() {
           <button className="bg-green-600 text-white rounded px-4" onClick={addChip}>Adicionar chip</button>
         </div>
         <table className="w-full text-sm border">
-          <thead><tr className="bg-gray-100"><th className="text-left p-2">Rótulo</th><th className="p-2">Status</th><th className="p-2">Hoje/Teto</th><th className="p-2">Aquecimento</th></tr></thead>
+          <thead><tr className="bg-gray-100"><th className="text-left p-2">Rótulo</th><th className="p-2">Status</th><th className="p-2">Conexão</th><th className="p-2">Hoje/Teto</th><th className="p-2">Aquecimento</th></tr></thead>
           <tbody>
             {numeros.map((n) => (
               <tr key={n.id} className="border-t">
                 <td className="p-2">{n.rotulo}</td>
                 <td className="p-2 text-center">{n.status}</td>
+                <td className={`p-2 text-center ${n.conexao === 'conectado' ? 'text-green-600' : 'text-amber-600'}`}>{n.conexao}</td>
                 <td className="p-2 text-center">{n.enviadosHoje}/{n.tetoDiario}</td>
                 <td className="p-2 text-center">nível {n.nivelAquecimento}</td>
               </tr>
             ))}
-            {numeros.length === 0 && <tr><td colSpan={4} className="p-3 text-center text-gray-500">Nenhum chip. Adicione e reinicie o worker para ler o QR.</td></tr>}
+            {numeros.length === 0 && <tr><td colSpan={5} className="p-3 text-center text-gray-500">Nenhum chip. Adicione acima — o QR de pareamento aparece aqui em até 1 minuto.</td></tr>}
           </tbody>
         </table>
+        {numeros.filter((n) => n.qr).map((n) => (
+          <div key={n.id} className="border rounded p-4 inline-block text-center mr-4">
+            <p className="font-semibold mb-2">Parear “{n.rotulo}”</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={n.qr!} alt={`QR do chip ${n.rotulo}`} className="w-48 h-48" />
+            <p className="text-xs text-gray-500 mt-2 max-w-[12rem]">WhatsApp → Aparelhos conectados → Conectar aparelho. O QR renova sozinho.</p>
+          </div>
+        ))}
       </section>
 
       <section>

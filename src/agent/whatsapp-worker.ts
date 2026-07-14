@@ -118,13 +118,24 @@ async function drenarFila() {
   }
 }
 
+// Chips cadastrados em /disparos depois do boot entram no pool sem reiniciar o worker.
+async function detectarNovosChips() {
+  const numeros = await prisma.whatsappNumero.findMany({ where: { status: { not: 'banido' } } })
+  for (const n of numeros) {
+    if (socks.has(n.id)) continue
+    console.log(`[WhatsApp] chip novo detectado: "${n.rotulo}" — iniciando pareamento (QR em /disparos)`)
+    await iniciarChip(n.id, n.rotulo)
+  }
+}
+
 async function main() {
   const numeros = await prisma.whatsappNumero.findMany({ where: { status: { not: 'banido' } } })
   if (numeros.length === 0) {
-    console.log('[WhatsApp] ⚠️ Nenhum chip cadastrado. Cadastre em /disparos (aba Pool) e reinicie.')
+    console.log('[WhatsApp] ⚠️ Nenhum chip cadastrado. Cadastre em /disparos (aba Pool) — o pool detecta sozinho em até 1min.')
   }
   for (const n of numeros) await iniciarChip(n.id, n.rotulo)
   setInterval(() => { drenarFila().catch((e) => console.error('[WhatsApp] erro fila:', e)) }, INTERVALO_FILA)
+  setInterval(() => { detectarNovosChips().catch((e) => console.error('[WhatsApp] erro ao detectar chips novos:', e)) }, 60_000)
   console.log(`[WhatsApp] ✓ Pool rodando (${numeros.length} chip[s]). Fila a cada 15s.\n`)
 }
 
