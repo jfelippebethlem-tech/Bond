@@ -3,6 +3,7 @@ import { prisma } from '@/lib/db'
 import { checkFacebookToken } from '@/lib/social/facebook'
 import { filtroPeriodo } from '@/lib/interacoes'
 import { handlesExcluidos, normUser } from '@/lib/filtros'
+import { handlesApoiadores } from '@/lib/apoiadores'
 import { normalizar } from '@/lib/texto'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
@@ -165,6 +166,9 @@ export async function GET(req: NextRequest) {
     const ate = searchParams.get('ate')
     const agrupar = searchParams.get('agrupar') // 'pessoa' | null
     const formato = searchParams.get('formato') // 'csv' | null
+    // Filtro "⭐ Apoiadores": só interações de quem está na lista de apoiadores atuais
+    // (Pessoa tipo='apoiador', handle do IG). Match em memória por handle normalizado.
+    const apoiadores = searchParams.get('apoiadores') === '1' ? await handlesApoiadores() : null
     const dateW: { gte?: Date; lte?: Date } = {}
     if (de) dateW.gte = new Date(de + 'T00:00:00')
     if (ate) dateW.lte = new Date(ate + 'T23:59:59')
@@ -176,7 +180,7 @@ export async function GET(req: NextRequest) {
     // Sem teto quando: agrupa por pessoa (precisa de TODAS as linhas — teto de 8000 sumia com gente
     // que os cards exatos mostravam) OU há busca de pessoa (o match acento-insensível roda em
     // memória DEPOIS da query; com teto, a busca via JS perdia linhas antigas — card 528 × lista 1).
-    const carregarTudo = agrupar === 'pessoa' || !!pessoa
+    const carregarTudo = agrupar === 'pessoa' || !!pessoa || !!apoiadores
 
     type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: Date; dataReal?: boolean; postUrl?: string | null; postLegenda?: string | null }
     const items: Item[] = []
@@ -196,6 +200,8 @@ export async function GET(req: NextRequest) {
       // abaixo); só em último caso o ingest. Antes mostrava sempre o criadoEm (ingest) — data errada na lista.
       for (const c of cs) {
         if (pessoa && !normalizar(c.autor || c.autorId).includes(pessoa)) continue
+        // autor no IG é o username; no FB é o nome de exibição (apoiador só casa por IG)
+        if (apoiadores && !apoiadores.has(normUser(c.autor)) && !apoiadores.has(normUser(c.autorId))) continue
         items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
       }
     }
@@ -212,9 +218,12 @@ export async function GET(req: NextRequest) {
       const exts = Array.from(new Set(is.map((i) => i.externalId)))
       const fas = exts.length ? await prisma.bondFa.findMany({ where: { externalId: { in: exts } } }) : []
       const nameOf = new Map(fas.map((f) => [f.externalId, f.nome || f.username || f.externalId]))
+      const userOf = new Map(fas.map((f) => [f.externalId, f.username || '']))
       for (const i of is) {
         const nome = String(nameOf.get(i.externalId) || i.externalId)
         if (pessoa && !normalizar(nome).includes(pessoa) && !normalizar(i.externalId).includes(pessoa)) continue
+        // curtidor do IG: o coletor usa o próprio username como externalId — casa pelos dois
+        if (apoiadores && !apoiadores.has(normUser(userOf.get(i.externalId))) && !apoiadores.has(normUser(i.externalId))) continue
         items.push({ id: i.id, tipo: i.tipo, plataforma: i.plataforma, pessoa: nome, texto: null, postId: i.postId, data: i.publicadoEm ?? i.criadoEm })
       }
     }
@@ -253,7 +262,7 @@ export async function GET(req: NextRequest) {
     // vieram SEM teto (carregarTudo) e filtrados com normalizar(), o único jeito de o card bater
     // com a tabela sendo insensível a acento (o contains do SQLite não é).
     let nComment = 0, nLike = 0, nShare = 0
-    if (pessoa) {
+    if (pessoa || apoiadores) {
       for (const it of items) { if (it.tipo === 'comment') nComment++; else if (it.tipo === 'like') nLike++; else nShare++ }
     } else {
       const comW = { ...(plataforma ? { plataforma } : {}), ...(dataFiltro ?? {}) }
@@ -279,7 +288,7 @@ export async function GET(req: NextRequest) {
     ])
     const curtidasPostagens = aggPost._sum.likes ?? 0
     const comentariosPostagens = aggPost._sum.comentarios ?? 0
-    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, comentariosPostagens, ultimaCapturaLike: aggLike._max.publicadoEm }
+    const stats = { total: nComment + nLike + nShare, comment: nComment, like: nLike, share: nShare, curtidasPostagens, comentariosPostagens, ultimaCapturaLike: aggLike._max.publicadoEm, ...(apoiadores ? { apoiadoresCadastrados: apoiadores.size } : {}) }
 
     if (agrupar === 'pessoa') {
       // Exclui contas do PRÓPRIO mandato + contas-sistema do IG (notifications etc.) — ver src/lib/filtros.ts

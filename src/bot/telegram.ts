@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client'
 
 import { resolverTokenPermanente } from '../lib/social/token'
 import { syncInstagram, syncFacebook } from '../lib/bond'
+import { parseApoiadores, importarApoiadores } from '../lib/apoiadores'
 
 const prisma = new PrismaClient()
 const token = process.env.TELEGRAM_BOT_TOKEN
@@ -318,6 +319,21 @@ async function resolverDemanda(chatId: string, id: string) {
     await bot.sendMessage(chatId, `✅ Resolvida: ${d.titulo}`)
   } catch { await bot.sendMessage(chatId, 'Não encontrei essa demanda (talvez já resolvida).') }
 }
+// Importa a lista de apoiadores de um arquivo já baixado em data/telegram_docs (botão ✅).
+async function importarListaApoiadores(chatId: string, fname: string) {
+  try {
+    // basename() barra path traversal vindo do callback_data
+    const fpath = path.join(process.cwd(), 'data', 'telegram_docs', path.basename(fname))
+    const regs = parseApoiadores(fs.readFileSync(fpath, 'utf-8'))
+    if (!regs.length) { await bot.sendMessage(chatId, 'Arquivo sem @s — manda a lista de novo?'); return }
+    const r = await importarApoiadores(regs)
+    await bot.sendMessage(chatId, `⭐ *Apoiadores importados!*\n\n• ${r.criados} novos cadastrados\n• ${r.atualizados} já existiam (atualizados)\n• ${r.vinculados} vinculados a fãs já monitorados\n\nO filtro *⭐ Apoiadores* já está disponível na aba *Interações* do painel. A lista completa fica em *Pessoas*.`, { parse_mode: 'Markdown' })
+  } catch (err) {
+    console.error('Erro ao importar apoiadores:', err)
+    await bot.sendMessage(chatId, '⚠️ Erro ao importar a lista. Manda o arquivo de novo?')
+  }
+}
+
 // Cliques nos botões do menu
 bot.on('callback_query', async (q) => {
   const chatId = String(q.message?.chat.id ?? '')
@@ -325,7 +341,8 @@ bot.on('callback_query', async (q) => {
   if (OWNER_ID === '' || String(q.from.id) !== OWNER_ID) return
   try {
     const d = q.data
-    if (d && d.startsWith('resolver:')) await resolverDemanda(chatId, d.slice('resolver:'.length))
+    if (d && d.startsWith('apoiar:')) await importarListaApoiadores(chatId, d.slice('apoiar:'.length))
+    else if (d && d.startsWith('resolver:')) await resolverDemanda(chatId, d.slice('resolver:'.length))
     else if (d === 'demandas') await cmdDemandas(chatId)
     else if (d === 'curtidores') await cmdCurtidores(chatId)
     else if (d === 'interacoes') await cmdInteracoes(chatId)
@@ -360,6 +377,37 @@ bot.on('message', async (msg) => {
       await bot.sendMessage(chatId, '📷 Foto recebida — vou analisar.')
     } catch (err) {
       console.error('Erro ao baixar foto:', err)
+    }
+    return
+  }
+
+  // Documento do dono (csv/txt/planilha) → baixa e, se parecer lista de apoiadores (@s),
+  // oferece importar. Antes o bot DESCARTAVA documentos em silêncio — a lista se perdia.
+  if (msg.document && isOwner(msg)) {
+    try {
+      const dir = path.join(process.cwd(), 'data', 'telegram_docs')
+      fs.mkdirSync(dir, { recursive: true })
+      const fpath = await bot.downloadFile(msg.document.file_id, dir)
+      console.log(`[DOC do dono] ${msg.document.file_name ?? '?'} -> ${fpath} | legenda: ${msg.caption ?? '(sem)'}`)
+      const nome = (msg.document.file_name ?? fpath).toLowerCase()
+      const textual = /\.(csv|txt|tsv)$/.test(nome) || (msg.document.mime_type ?? '').startsWith('text/')
+      if (!textual) {
+        await bot.sendMessage(chatId, `📄 Recebi *${msg.document.file_name ?? 'o arquivo'}*, mas só sei ler lista em *CSV ou texto*. Exporta a planilha como CSV (ou cola a lista aqui como mensagem) e manda de novo.`, { parse_mode: 'Markdown' })
+        return
+      }
+      const regs = parseApoiadores(fs.readFileSync(fpath, 'utf-8'))
+      if (!regs.length) {
+        await bot.sendMessage(chatId, '📄 Arquivo recebido, mas não achei nenhum @ de Instagram nele. Confere se a lista tem os @s (ou colunas nome + instagram)?')
+        return
+      }
+      const amostra = regs.slice(0, 5).map((r) => `• ${r.nome} — @${r.instagram}`).join('\n')
+      await bot.sendMessage(chatId, `📄 Achei *${regs.length} apoiadores* no arquivo:\n\n${amostra}${regs.length > 5 ? `\n…e mais ${regs.length - 5}.` : ''}\n\nImporto como a lista de *apoiadores atuais*? (Eles ganham o filtro ⭐ na aba Interações.)`, {
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [[{ text: `✅ Importar ${regs.length} apoiadores`, callback_data: `apoiar:${path.basename(fpath)}` }]] },
+      })
+    } catch (err) {
+      console.error('Erro ao processar documento:', err)
+      await bot.sendMessage(chatId, '⚠️ Não consegui baixar/ler o arquivo. Tenta de novo?')
     }
     return
   }
@@ -414,6 +462,25 @@ bot.on('message', async (msg) => {
       console.error('Erro no comando admin:', err)
     }
     return
+  }
+
+  // Texto do dono com vários @s = lista de apoiadores colada → mesmo fluxo do documento.
+  if (isOwner(msg) && (text.match(/@[A-Za-z0-9._]{2,}/g)?.length ?? 0) >= 3) {
+    try {
+      const regs = parseApoiadores(text)
+      if (regs.length >= 3) {
+        const dir = path.join(process.cwd(), 'data', 'telegram_docs')
+        fs.mkdirSync(dir, { recursive: true })
+        const fname = `colado-${Date.now()}.txt`
+        fs.writeFileSync(path.join(dir, fname), text)
+        const amostra = regs.slice(0, 5).map((r) => `• ${r.nome} — @${r.instagram}`).join('\n')
+        await bot.sendMessage(chatId, `📋 Achei *${regs.length} apoiadores* na mensagem:\n\n${amostra}${regs.length > 5 ? `\n…e mais ${regs.length - 5}.` : ''}\n\nImporto como a lista de *apoiadores atuais*? (Eles ganham o filtro ⭐ na aba Interações.)`, {
+          parse_mode: 'Markdown',
+          reply_markup: { inline_keyboard: [[{ text: `✅ Importar ${regs.length} apoiadores`, callback_data: `apoiar:${fname}` }]] },
+        })
+        return
+      }
+    } catch (err) { console.error('Erro na lista colada:', err) }
   }
 
   // Texto livre do DONO (não-comando) → o Hermes (Yoda) RESPONDE, consultando o segundo cérebro.

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Heart, MessageCircle, Share2, Users, List, Search, RefreshCw, Loader2,
-  Radio, Activity, Image as ImageIcon, Download, ExternalLink,
+  Radio, Activity, Image as ImageIcon, Download, ExternalLink, Star,
 } from 'lucide-react'
 
 type Item = { id: string; tipo: string; plataforma: string; pessoa: string; texto: string | null; postId: string; data: string; postUrl?: string | null; postLegenda?: string | null }
 type Pessoa = { pessoa: string; total: number; like: number; likeIG: number; likeFB: number; comment: number; share: number; plataformas: string[]; nPosts: number; posts: string[]; ultima: string }
-type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; comentariosPostagens?: number; ultimaCapturaLike?: string | null }
+type Stats = { total: number; like: number; comment: number; share: number; curtidasPostagens?: number; comentariosPostagens?: number; ultimaCapturaLike?: string | null; apoiadoresCadastrados?: number }
 
 const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 const REDE = (p: string) => ({ instagram: 'bg-pink-100 text-pink-700', facebook: 'bg-blue-100 text-blue-700', twitter: 'bg-sky-100 text-sky-700' }[p] || 'bg-gray-100 text-gray-600')
@@ -45,6 +45,7 @@ export default function InteracoesPage() {
   const [ate, setAte] = useState('')
   const [presetAtivo, setPresetAtivo] = useState('')
   const [pessoa, setPessoa] = useState('')
+  const [apoiadores, setApoiadores] = useState(false)
   const [lista, setLista] = useState<Item[]>([])
   const [pessoas, setPessoas] = useState<Pessoa[]>([])
   const [stats, setStats] = useState<Stats>({ total: 0, like: 0, comment: 0, share: 0 })
@@ -65,6 +66,7 @@ export default function InteracoesPage() {
     if (de) p.set('de', de)
     if (ate) p.set('ate', ate)
     if (pessoa) p.set('pessoa', pessoa)
+    if (apoiadores) p.set('apoiadores', '1')
     if (modo === 'pessoa') p.set('agrupar', 'pessoa')
     try {
       const res = await fetch(`/api/bond?${p}`)
@@ -74,7 +76,7 @@ export default function InteracoesPage() {
       else setLista(Array.isArray(d.data) ? d.data : [])
     } catch { /* ignore */ }
     setLoading(false)
-  }, [modo, tipoInteracao, plataforma, de, ate, pessoa])
+  }, [modo, tipoInteracao, plataforma, de, ate, pessoa, apoiadores])
 
   useEffect(() => { load() }, [load])
 
@@ -86,9 +88,10 @@ export default function InteracoesPage() {
     if (de) p.set('de', de)
     if (ate) p.set('ate', ate)
     if (pessoa) p.set('pessoa', pessoa)
+    if (apoiadores) p.set('apoiadores', '1')
     if (modo === 'pessoa') p.set('agrupar', 'pessoa')
     window.open(`/api/bond?${p}`, '_blank')
-  }, [modo, tipoInteracao, plataforma, de, ate, pessoa])
+  }, [modo, tipoInteracao, plataforma, de, ate, pessoa, apoiadores])
 
   // Ao vivo: re-busca a cada 20s
   useEffect(() => {
@@ -101,8 +104,8 @@ export default function InteracoesPage() {
   function aplicarMes(mIdx: number) { const d = new Date(anoAtual, mIdx, 1); setDe(fmtISO(d)); setAte(fmtISO(new Date(anoAtual, mIdx + 1, 0))); setPresetAtivo(`mes-${mIdx}`) }
   function aplicarAno(ano: number) { setDe(`${ano}-01-01`); setAte(`${ano}-12-31`); setPresetAtivo(`ano-${ano}`) }
   function limparData() { setDe(''); setAte(''); setPresetAtivo('') }
-  function limparTudo() { setTipo(''); setPlat(''); setPessoa(''); setDe(''); setAte(''); setPresetAtivo(''); setModo('pessoa') }
-  const algumFiltroAtivo = !!(tipoInteracao || plataforma || pessoa || de || ate) || modo !== 'pessoa'
+  function limparTudo() { setTipo(''); setPlat(''); setPessoa(''); setDe(''); setAte(''); setPresetAtivo(''); setApoiadores(false); setModo('pessoa') }
+  const algumFiltroAtivo = !!(tipoInteracao || plataforma || pessoa || de || ate || apoiadores) || modo !== 'pessoa'
 
   async function sincronizar() {
     setSync(true)
@@ -150,10 +153,11 @@ export default function InteracoesPage() {
       {/* Cards de totais */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <Card icon={<Activity size={18} className="text-indigo-600" />} cor="bg-indigo-50" label="Total" valor={stats.total} />
-        {(!pessoa && (!tipoInteracao || tipoInteracao === 'like')) && (
+        {(!pessoa && !apoiadores && (!tipoInteracao || tipoInteracao === 'like')) && (
           <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas recebidas (nos posts)" valor={(stats.curtidasPostagens ?? 0) || stats.like} />
         )}
-        <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={(!pessoa && (!tipoInteracao || tipoInteracao === 'comment') && (stats.comentariosPostagens ?? 0)) || stats.comment} />
+        {apoiadores && <Card icon={<Heart size={18} className="text-rose-500" />} cor="bg-rose-50" label="Curtidas de apoiadores" valor={stats.like} />}
+        <Card icon={<MessageCircle size={18} className="text-blue-500" />} cor="bg-blue-50" label="Comentários" valor={(!pessoa && !apoiadores && (!tipoInteracao || tipoInteracao === 'comment') && (stats.comentariosPostagens ?? 0)) || stats.comment} />
         {plataforma !== 'instagram' && <Card icon={<Share2 size={18} className="text-green-600" />} cor="bg-green-50" label="Compartilhamentos" valor={stats.share} />}
       </div>
 
@@ -189,7 +193,7 @@ export default function InteracoesPage() {
       {/* Cobertura honesta dos curtidores: identificamos QUEM curtiu só nos posts que o coletor do
           desktop capturou. Num período recente sem captura, o "por pessoa" mostra poucas/nenhuma curtida
           embora a Meta registre o total — deixamos explícito que é CAPTURA pendente, não o filtro quebrado. */}
-      {(de || ate) && (!tipoInteracao || tipoInteracao === 'like') && (stats.curtidasPostagens ?? 0) > stats.like && (
+      {(de || ate) && !apoiadores && (!tipoInteracao || tipoInteracao === 'like') && (stats.curtidasPostagens ?? 0) > stats.like && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-start gap-1.5">
           <Heart size={13} className="text-amber-400 mt-0.5 shrink-0" fill="currentColor" />
           <span>No período há <b>{(stats.curtidasPostagens ?? 0).toLocaleString('pt-BR')}</b> curtidas nos posts (total da Meta), mas só <b>{stats.like.toLocaleString('pt-BR')}</b> têm <b>quem curtiu</b> identificado — o coletor do desktop ainda não capturou os curtidores dos outros posts desta janela{stats.ultimaCapturaLike ? <> (última captura cobre posts até <b>{new Date(stats.ultimaCapturaLike).toLocaleDateString('pt-BR')}</b>)</> : null}. <b>Não é o filtro</b>: é captura pendente. O ranking acumulado (todos os curtidores) fica na aba <b>Curtidores</b>.</span>
@@ -202,6 +206,9 @@ export default function InteracoesPage() {
           <button onClick={() => setModo('pessoa')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${modo === 'pessoa' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}><Users size={15} /> Por pessoa</button>
           <button onClick={() => setModo('lista')} className={`flex items-center gap-1.5 px-3 py-1.5 text-sm ${modo === 'lista' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}><List size={15} /> Lista</button>
         </div>
+        <button onClick={() => setApoiadores((v) => !v)} title="Só interações de quem está na lista de apoiadores atuais (cadastrada pelo bot do Telegram ou na aba Pessoas)" className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border transition ${apoiadores ? 'bg-amber-400 text-amber-950 border-amber-400' : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'}`}>
+          <Star size={15} className={apoiadores ? 'fill-amber-950' : ''} /> Apoiadores
+        </button>
         <select value={tipoInteracao} onChange={(e) => setTipo(e.target.value)} className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
           <option value="">Todos os tipos</option><option value="like">Curtidas</option><option value="comment">Comentários</option><option value="share">Compartilhamentos</option>
         </select>
@@ -224,6 +231,16 @@ export default function InteracoesPage() {
           </button>
         )}
       </div>
+
+      {apoiadores && stats.apoiadoresCadastrados === 0 && !loading && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-4">
+          <Star size={16} className="mt-0.5 shrink-0" />
+          <span><b>Nenhum apoiador cadastrado ainda.</b> Mande a lista (CSV ou texto com os @s do Instagram) no <b>bot do Telegram</b> — ele importa e o filtro passa a funcionar. Também dá para cadastrar um a um na aba <b>Pessoas</b> (tipo &quot;apoiador&quot;).</span>
+        </div>
+      )}
+      {apoiadores && (stats.apoiadoresCadastrados ?? 0) > 0 && !loading && (
+        <p className="text-xs text-amber-700 -mt-2 mb-3 flex items-center gap-1.5"><Star size={12} className="fill-amber-500 text-amber-500" /> Mostrando só interações dos <b>{stats.apoiadoresCadastrados}</b> apoiadores cadastrados (match pelo @ do Instagram).</p>
+      )}
 
       {loading ? (
         <div className="flex items-center gap-2 text-gray-500 py-12 justify-center"><Loader2 className="animate-spin" size={18} /> Carregando…</div>
