@@ -1,6 +1,6 @@
 import fs from 'fs'
 import path from 'path'
-import { exec } from 'child_process'
+import { exec, execFile } from 'child_process'
 
 import TelegramBot from 'node-telegram-bot-api'
 import { PrismaClient } from '@prisma/client'
@@ -319,12 +319,37 @@ async function resolverDemanda(chatId: string, id: string) {
     await bot.sendMessage(chatId, `✅ Resolvida: ${d.titulo}`)
   } catch { await bot.sendMessage(chatId, 'Não encontrei essa demanda (talvez já resolvida).') }
 }
+// Planilha xlsx → CSV via python+openpyxl (sem dependência npm). Caminho do python vem de
+// XLSX_PYTHON (default: venv do JFN nesta VM); null = não conseguiu converter.
+function xlsxParaCsv(fpath: string): Promise<string | null> {
+  const py = process.env.XLSX_PYTHON ?? '/home/ubuntu/JFN/.venv/bin/python'
+  const script = 'import openpyxl,csv,sys\n' +
+    'wb=openpyxl.load_workbook(sys.argv[1],read_only=True)\n' +
+    'w=csv.writer(sys.stdout,delimiter=";")\n' +
+    'for ws in wb.worksheets:\n' +
+    '  for r in ws.iter_rows(values_only=True):\n' +
+    '    w.writerow(["" if c is None else str(c) for c in r])\n'
+  return new Promise((resolve) => {
+    execFile(py, ['-c', script, fpath], { maxBuffer: 20 * 1024 * 1024 }, (err, stdout) => {
+      if (err) { console.error('xlsxParaCsv falhou:', err.message); resolve(null) } else resolve(stdout)
+    })
+  })
+}
+
+// Conteúdo textual de um arquivo de lista (csv/txt direto; xlsx convertido); null = formato não suportado.
+async function lerListaArquivo(fpath: string): Promise<string | null> {
+  if (/\.xlsx$/i.test(fpath)) return xlsxParaCsv(fpath)
+  return fs.readFileSync(fpath, 'utf-8')
+}
+
 // Importa a lista de apoiadores de um arquivo já baixado em data/telegram_docs (botão ✅).
 async function importarListaApoiadores(chatId: string, fname: string) {
   try {
     // basename() barra path traversal vindo do callback_data
     const fpath = path.join(process.cwd(), 'data', 'telegram_docs', path.basename(fname))
-    const regs = parseApoiadores(fs.readFileSync(fpath, 'utf-8'))
+    const conteudo = await lerListaArquivo(fpath)
+    if (conteudo === null) { await bot.sendMessage(chatId, 'Não consegui ler esse formato — manda em CSV ou texto?'); return }
+    const regs = parseApoiadores(conteudo)
     if (!regs.length) { await bot.sendMessage(chatId, 'Arquivo sem @s — manda a lista de novo?'); return }
     const r = await importarApoiadores(regs)
     await bot.sendMessage(chatId, `⭐ *Apoiadores importados!*\n\n• ${r.criados} novos cadastrados\n• ${r.atualizados} já existiam (atualizados)\n• ${r.vinculados} vinculados a fãs já monitorados\n\nO filtro *⭐ Apoiadores* já está disponível na aba *Interações* do painel. A lista completa fica em *Pessoas*.`, { parse_mode: 'Markdown' })
@@ -391,11 +416,14 @@ bot.on('message', async (msg) => {
       console.log(`[DOC do dono] ${msg.document.file_name ?? '?'} -> ${fpath} | legenda: ${msg.caption ?? '(sem)'}`)
       const nome = (msg.document.file_name ?? fpath).toLowerCase()
       const textual = /\.(csv|txt|tsv)$/.test(nome) || (msg.document.mime_type ?? '').startsWith('text/')
-      if (!textual) {
-        await bot.sendMessage(chatId, `📄 Recebi *${msg.document.file_name ?? 'o arquivo'}*, mas só sei ler lista em *CSV ou texto*. Exporta a planilha como CSV (ou cola a lista aqui como mensagem) e manda de novo.`, { parse_mode: 'Markdown' })
+      let conteudo: string | null = null
+      if (textual) conteudo = fs.readFileSync(fpath, 'utf-8')
+      else if (/\.xlsx$/.test(nome)) conteudo = await xlsxParaCsv(fpath)
+      if (conteudo === null) {
+        await bot.sendMessage(chatId, `📄 Recebi *${msg.document.file_name ?? 'o arquivo'}*, mas só sei ler lista em *CSV, texto ou planilha .xlsx*. Exporta como CSV (ou cola a lista aqui como mensagem) e manda de novo.`, { parse_mode: 'Markdown' })
         return
       }
-      const regs = parseApoiadores(fs.readFileSync(fpath, 'utf-8'))
+      const regs = parseApoiadores(conteudo)
       if (!regs.length) {
         await bot.sendMessage(chatId, '📄 Arquivo recebido, mas não achei nenhum @ de Instagram nele. Confere se a lista tem os @s (ou colunas nome + instagram)?')
         return

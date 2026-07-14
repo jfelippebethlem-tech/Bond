@@ -31,7 +31,7 @@ export function parseApoiadores(texto: string): RegistroApoiador[] {
   let igCol = -1, nomeCol = -1, inicio = 0
   if (delim) {
     const head = linhas[0].split(delim).map((c) => c.trim().toLowerCase())
-    igCol = head.findIndex((c) => /insta|arroba|usuario|user|@|perfil|handle/.test(c))
+    igCol = head.findIndex((c) => /insta|arroba|usuario|user|@|perfil|handle|\big\b/.test(c))
     nomeCol = head.findIndex((c) => /nome|name/.test(c))
     if (igCol >= 0 || nomeCol >= 0) inicio = 1
   }
@@ -49,12 +49,15 @@ export function parseApoiadores(texto: string): RegistroApoiador[] {
     const cells = delim ? linha.split(delim).map((c) => c.trim()) : [linha]
     // 1) coluna de instagram declarada no cabeçalho
     if (igCol >= 0 && cells[igCol]) {
-      add(cells[igCol], nomeCol >= 0 ? cells[nomeCol] ?? '' : cells.filter((_, i) => i !== igCol).join(' '))
+      // sem coluna de nome declarada, assume a 1ª coluna (não concatenar telefone/email no nome)
+      add(cells[igCol], nomeCol >= 0 ? cells[nomeCol] ?? '' : cells[igCol === 0 ? 1 : 0] ?? '')
       continue
     }
     // 2) @handle explícito ou URL do Instagram em qualquer lugar da linha
-    const m = linha.match(RE_HANDLE)
-    if (m?.length) { add(m[0], linha); continue }
+    // (e-mails saem antes — "fulano@gmail.com" não é handle)
+    const semEmail = linha.replace(/\S+@\S+\.\S+/g, ' ')
+    const m = semEmail.match(RE_HANDLE)
+    if (m?.length) { add(m[0], semEmail); continue }
     const url = linha.match(/instagram\.com\/([A-Za-z0-9._]+)/)
     if (url) { add(url[1], linha.replace(/https?:\/\/\S+/g, ' ')); continue }
     // 3) CSV sem cabeçalho: célula que parece handle puro (a última que casar, p/ "Nome,handle")
@@ -95,9 +98,18 @@ export async function importarApoiadores(registros: RegistroApoiador[]) {
   return { criados, atualizados, vinculados, total: registros.length }
 }
 
-// Handles (normalizados via normUser, o mesmo do ranking) dos apoiadores cadastrados —
-// usado pelo filtro "Apoiadores" da aba Interações.
+// Apoiadores cadastrados: handle normalizado (via normUser, o mesmo do ranking) → nome
+// completo. Usado pelo filtro "Apoiadores" da aba Interações, que exibe "Nome (@handle)".
+export async function mapaApoiadores(): Promise<Map<string, string>> {
+  const ps = await prisma.pessoa.findMany({ where: { tipo: 'apoiador', ativo: true, instagram: { not: null } }, select: { instagram: true, nome: true } })
+  const m = new Map<string, string>()
+  for (const p of ps) {
+    const h = normUser(normHandle(p.instagram))
+    if (h) m.set(h, p.nome)
+  }
+  return m
+}
+
 export async function handlesApoiadores(): Promise<Set<string>> {
-  const ps = await prisma.pessoa.findMany({ where: { tipo: 'apoiador', ativo: true, instagram: { not: null } }, select: { instagram: true } })
-  return new Set(ps.map((p) => normUser(normHandle(p.instagram))).filter(Boolean))
+  return new Set((await mapaApoiadores()).keys())
 }

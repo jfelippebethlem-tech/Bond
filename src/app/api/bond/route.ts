@@ -3,7 +3,7 @@ import { prisma } from '@/lib/db'
 import { checkFacebookToken } from '@/lib/social/facebook'
 import { filtroPeriodo } from '@/lib/interacoes'
 import { handlesExcluidos, normUser } from '@/lib/filtros'
-import { handlesApoiadores } from '@/lib/apoiadores'
+import { mapaApoiadores } from '@/lib/apoiadores'
 import { normalizar } from '@/lib/texto'
 import {
   syncAll, syncTwitter, syncFacebook, syncInstagram,
@@ -167,8 +167,10 @@ export async function GET(req: NextRequest) {
     const agrupar = searchParams.get('agrupar') // 'pessoa' | null
     const formato = searchParams.get('formato') // 'csv' | null
     // Filtro "⭐ Apoiadores": só interações de quem está na lista de apoiadores atuais
-    // (Pessoa tipo='apoiador', handle do IG). Match em memória por handle normalizado.
-    const apoiadores = searchParams.get('apoiadores') === '1' ? await handlesApoiadores() : null
+    // (Pessoa tipo='apoiador', handle do IG). Match em memória por handle normalizado;
+    // exibe "Nome Completo (@handle)" para o gabinete saber QUEM é.
+    const apoiadores = searchParams.get('apoiadores') === '1' ? await mapaApoiadores() : null
+    const rotuloApoiador = (h: string) => `${apoiadores!.get(h)} (@${h})`
     const dateW: { gte?: Date; lte?: Date } = {}
     if (de) dateW.gte = new Date(de + 'T00:00:00')
     if (ate) dateW.lte = new Date(ate + 'T23:59:59')
@@ -199,10 +201,17 @@ export async function GET(req: NextRequest) {
       // data exibida/ordenada = data REAL do comentário; sem ela, a data do post (resolvida no join
       // abaixo); só em último caso o ingest. Antes mostrava sempre o criadoEm (ingest) — data errada na lista.
       for (const c of cs) {
-        if (pessoa && !normalizar(c.autor || c.autorId).includes(pessoa)) continue
         // autor no IG é o username; no FB é o nome de exibição (apoiador só casa por IG)
-        if (apoiadores && !apoiadores.has(normUser(c.autor)) && !apoiadores.has(normUser(c.autorId))) continue
-        items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: c.autor || c.autorId || '?', texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
+        let rotulo = c.autor || c.autorId || '?'
+        if (apoiadores) {
+          const h = [normUser(c.autor), normUser(c.autorId)].find((x) => x && apoiadores.has(x))
+          if (!h) continue
+          rotulo = rotuloApoiador(h)
+        }
+        // busca de pessoa casa com o autor cru OU com o rótulo "Nome (@handle)" — é o rótulo
+        // que o "ver comentários →" da tabela joga na busca quando o filtro ⭐ está ligado
+        if (pessoa && !normalizar(c.autor || c.autorId).includes(pessoa) && !normalizar(rotulo).includes(pessoa)) continue
+        items.push({ id: c.id, tipo: 'comment', plataforma: c.plataforma, pessoa: rotulo, texto: c.texto, postId: c.postId, data: c.publicadoEm ?? c.criadoEm, dataReal: !!c.publicadoEm })
       }
     }
     // Likes/shares (BondInteracao; resolve a pessoa via externalId -> BondFa)
@@ -220,10 +229,14 @@ export async function GET(req: NextRequest) {
       const nameOf = new Map(fas.map((f) => [f.externalId, f.nome || f.username || f.externalId]))
       const userOf = new Map(fas.map((f) => [f.externalId, f.username || '']))
       for (const i of is) {
-        const nome = String(nameOf.get(i.externalId) || i.externalId)
-        if (pessoa && !normalizar(nome).includes(pessoa) && !normalizar(i.externalId).includes(pessoa)) continue
+        let nome = String(nameOf.get(i.externalId) || i.externalId)
         // curtidor do IG: o coletor usa o próprio username como externalId — casa pelos dois
-        if (apoiadores && !apoiadores.has(normUser(userOf.get(i.externalId))) && !apoiadores.has(normUser(i.externalId))) continue
+        if (apoiadores) {
+          const h = [normUser(userOf.get(i.externalId)), normUser(i.externalId)].find((x) => x && apoiadores.has(x))
+          if (!h) continue
+          nome = rotuloApoiador(h)
+        }
+        if (pessoa && !normalizar(nome).includes(pessoa) && !normalizar(i.externalId).includes(pessoa)) continue
         items.push({ id: i.id, tipo: i.tipo, plataforma: i.plataforma, pessoa: nome, texto: null, postId: i.postId, data: i.publicadoEm ?? i.criadoEm })
       }
     }
