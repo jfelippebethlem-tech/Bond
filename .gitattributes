@@ -1,0 +1,10 @@
+# Normalização de fim-de-linha — mata o ruído CRLF do Syncthing (Linux ↔ Jorge/Windows)
+# Repo guarda LF; cada SO trabalha do seu jeito sem sujar o git status.
+* text=auto
+*.sh text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary
