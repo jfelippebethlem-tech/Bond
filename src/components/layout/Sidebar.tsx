@@ -66,15 +66,17 @@ export default function Sidebar() {
   return (
     <aside
       className={clsx(
-        'relative flex flex-col bg-slate-900 text-slate-300 transition-all duration-300 min-h-screen',
+        'pm-side relative flex flex-col text-slate-300 transition-all duration-300 min-h-screen',
         collapsed ? 'w-16' : 'w-64'
       )}
     >
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-slate-700">
-        <Landmark className="w-7 h-7 text-blue-400 shrink-0" />
+      <div className="pm-side-head flex items-center gap-3 px-4 py-5">
+        <span className="pm-reactor shrink-0" aria-hidden>
+          <Landmark className="w-4 h-4" />
+        </span>
         {!collapsed && (
-          <span className="font-bold text-white text-sm leading-tight">
-            PolitiMonitor
+          <span className="font-bold text-white text-sm leading-tight tracking-tight">
+            Politi<span style={{ color: 'oklch(0.82 0.15 60)' }}>Monitor</span>
           </span>
         )}
       </div>
@@ -88,26 +90,18 @@ export default function Sidebar() {
               href={href}
               title={label}
               aria-label={label}
-              className={clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                active
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-              )}
+              className={clsx('pm-nav', active && 'on')}
             >
               <Icon className="w-5 h-5 shrink-0" />
-              {!collapsed && <span>{label}</span>}
+              {!collapsed && <span className="truncate">{label}</span>}
             </Link>
           )
         })}
       </nav>
 
-      <div className="px-2 pb-4 border-t border-slate-700 pt-4">
+      <div className="px-2 pb-4 pt-3" style={{ borderTop: '1px solid oklch(0.34 0.05 262 / 0.5)' }}>
         <form action="/api/auth/logout" method="POST">
-          <button
-            type="submit"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white w-full transition-colors"
-          >
+          <button type="submit" className="pm-nav w-full">
             <LogOut className="w-5 h-5 shrink-0" />
             {!collapsed && <span>Sair</span>}
           </button>
@@ -116,13 +110,10 @@ export default function Sidebar() {
 
       <button
         onClick={() => setCollapsed(!collapsed)}
-        className="absolute -right-3 top-6 bg-slate-700 text-slate-300 rounded-full p-0.5 hover:bg-slate-600 border border-slate-600"
+        aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
+        className="pm-collapse absolute -right-3 top-6"
       >
-        {collapsed ? (
-          <ChevronRight className="w-4 h-4" />
-        ) : (
-          <ChevronLeft className="w-4 h-4" />
-        )}
+        {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
       </button>
     </aside>
   )
