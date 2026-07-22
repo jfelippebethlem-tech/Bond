@@ -397,10 +397,32 @@ model SmsFila {
 
 model OptOut {
   id        String   @id @default(cuid())
-  telefone  String   @unique
-  canal     String   @default("todos")
+  telefone  String?  @unique          // opcional — permite linha só-email
+  email     String?  @unique          // opt-out de email por endereço
+  canal     String   @default("todos") // "todos"|"whatsapp"|"sms"|"email"
   origem    String?
   criadoEm  DateTime @default(now())
+}
+
+// ── Fila de emails (enviados pelo email-worker via Brevo, grátis 300/dia) ──
+model EmailFila {
+  id           String    @id @default(cuid())
+  email        String    // normalizado (lower/trim)
+  assunto      String
+  corpo        String    // texto simples; HTML+rodapé montados no drain
+  tipo         String    @default("newsletter")
+  status       String    @default("pendente") // pendente|enviado|erro|cancelado
+  erro         String?
+  provedorId   String?   // messageId retornado pela Brevo (auditoria)
+  pessoaId     String?
+  campanhaId   String?
+  referencia   String?
+  tentativas   Int       @default(0)
+  agendadoPara DateTime?
+  criadoEm     DateTime  @default(now())
+  enviadoEm    DateTime?
+
+  @@index([status])
 }
 
 model Disparo {
