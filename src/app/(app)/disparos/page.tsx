@@ -48,7 +48,7 @@ export default function DisparosPage() {
         body: JSON.stringify({ titulo, mensagem, assunto: assunto || undefined, canais, audiencia: ['apoiador', 'coordenador'] }),
       }).then((x) => x.json())
       if (r.erro) setMsg('Erro: ' + r.erro)
-      else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS + ${r.email} Email (alvo: ${r.totalAlvo})`); setTitulo(''); setAssunto(''); setMensagem(''); carregar() }
+      else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS + ${r.email} Email + ${r.telegram} Telegram (alvo: ${r.totalAlvo})`); setTitulo(''); setAssunto(''); setMensagem(''); carregar() }
     } catch {
       setMsg('Erro ao disparar (rede/servidor). Nada foi enviado.')
     }
@@ -79,6 +79,7 @@ export default function DisparosPage() {
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('whatsapp')} onChange={() => toggleCanal('whatsapp')} /> WhatsApp</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('sms')} disabled={smsOnline === false} onChange={() => toggleCanal('sms')} /> SMS {smsOnline === false && <span className="text-red-500 text-xs">(gateway offline)</span>}</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('email')} onChange={() => toggleCanal('email')} /> 📧 Email <span className="text-xs text-gray-400">(grátis · 300/dia)</span></label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('telegram')} onChange={() => toggleCanal('telegram')} /> ✈️ Telegram <span className="text-xs text-gray-400">(grátis · vai pro canal)</span></label>
         </div>
         <button className="bg-blue-600 text-white rounded px-4 py-2" onClick={disparar}>Disparar</button>
         {msg && <p className="text-sm">{msg}</p>}
