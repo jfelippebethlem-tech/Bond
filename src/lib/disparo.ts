@@ -1,30 +1,33 @@
 import { prisma } from './db'
 import { enfileirarBroadcast } from './whatsapp'
 import { enfileirarBroadcastSms } from './sms'
+import { enfileirarBroadcastEmail } from './email'
 
-const CANAIS_VALIDOS = ['whatsapp', 'sms']
+const CANAIS_VALIDOS = ['whatsapp', 'sms', 'email']
 
 // Valida o corpo de um disparo vindo da API. Fica aqui (não no route.ts) porque
 // route handlers do App Router só podem exportar GET/POST/etc.
-export function validarCorpoDisparo(body: unknown): { ok: boolean; erro?: string; valor?: { titulo: string; mensagem: string; canais: Array<'whatsapp'|'sms'>; audiencia: string[] } } {
+export function validarCorpoDisparo(body: unknown): { ok: boolean; erro?: string; valor?: { titulo: string; mensagem: string; assunto: string; canais: Array<'whatsapp'|'sms'|'email'>; audiencia: string[] } } {
   const b = (body || {}) as Record<string, unknown>
   const titulo = typeof b.titulo === 'string' ? b.titulo.trim() : ''
   const mensagem = typeof b.mensagem === 'string' ? b.mensagem.trim() : ''
+  const assuntoRaw = typeof b.assunto === 'string' ? b.assunto.trim() : ''
   const canais = Array.isArray(b.canais) ? (b.canais as string[]) : []
   const audiencia = Array.isArray(b.audiencia) && b.audiencia.length ? (b.audiencia as string[]) : ['apoiador', 'coordenador']
   if (!titulo) return { ok: false, erro: 'titulo obrigatório' }
   if (!mensagem) return { ok: false, erro: 'mensagem obrigatória' }
   if (!canais.length) return { ok: false, erro: 'selecione ao menos um canal' }
   if (!canais.every((c) => CANAIS_VALIDOS.includes(c))) return { ok: false, erro: 'canal inválido' }
-  return { ok: true, valor: { titulo, mensagem, canais: canais as Array<'whatsapp'|'sms'>, audiencia } }
+  return { ok: true, valor: { titulo, mensagem, assunto: assuntoRaw || titulo, canais: canais as Array<'whatsapp'|'sms'|'email'>, audiencia } }
 }
 
 export async function dispararCampanha(opts: {
   titulo: string
   mensagem: string
   audiencia: string[]
-  canais: Array<'whatsapp' | 'sms'>
-}): Promise<{ disparoId: string; whatsapp: number; sms: number; totalAlvo: number }> {
+  canais: Array<'whatsapp' | 'sms' | 'email'>
+  assunto?: string
+}): Promise<{ disparoId: string; whatsapp: number; sms: number; email: number; totalAlvo: number }> {
   const totalAlvo = await prisma.pessoa.count({
     where: { tipo: { in: opts.audiencia }, ativo: true, telefone: { not: null } },
   })
@@ -34,6 +37,7 @@ export async function dispararCampanha(opts: {
 
   let whatsapp = 0
   let sms = 0
+  let email = 0
   if (opts.canais.includes('whatsapp')) {
     const r = await enfileirarBroadcast(opts.mensagem, 'broadcast', undefined, disparo.id, opts.audiencia)
     whatsapp = r.enfileirados
@@ -42,6 +46,10 @@ export async function dispararCampanha(opts: {
     const r = await enfileirarBroadcastSms(opts.mensagem, 'broadcast', disparo.id, opts.audiencia)
     sms = r.enfileirados
   }
-  await prisma.disparo.update({ where: { id: disparo.id }, data: { enfileirados: whatsapp + sms } })
-  return { disparoId: disparo.id, whatsapp, sms, totalAlvo }
+  if (opts.canais.includes('email')) {
+    const r = await enfileirarBroadcastEmail(opts.assunto || opts.titulo, opts.mensagem, 'broadcast', disparo.id, opts.audiencia)
+    email = r.enfileirados
+  }
+  await prisma.disparo.update({ where: { id: disparo.id }, data: { enfileirados: whatsapp + sms + email } })
+  return { disparoId: disparo.id, whatsapp, sms, email, totalAlvo }
 }

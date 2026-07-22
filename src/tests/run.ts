@@ -616,6 +616,142 @@ async function main() {
     assert(bom.ok && bom.valor?.canais[0] === 'whatsapp', 'Corpo válido deveria passar')
   })
 
+  console.log('\n📧 Email — opt-out')
+
+  await test('registrarOptOutEmail grava e estaOptOutEmail detecta', async () => {
+    const { registrarOptOutEmail, estaOptOutEmail } = await import('@/lib/optout')
+    const email = `t${Date.now()}@ex.com`
+    assert((await estaOptOutEmail(email)) === false, 'não deveria estar opt-out ainda')
+    await registrarOptOutEmail(email, 'teste')
+    assert((await estaOptOutEmail(email)) === true, 'deveria estar opt-out após registrar')
+  })
+
+  await test('hashEmailOptOut é verificável e rejeita hash errado', async () => {
+    const { hashEmailOptOut, verificarHashOptOut } = await import('@/lib/optout')
+    const email = 'Alguem@Exemplo.com'
+    const h = hashEmailOptOut(email)
+    assert(verificarHashOptOut(email, h) === true, 'hash válido deveria passar')
+    assert(verificarHashOptOut(email, h.replace(/.$/, '0')) === false, 'hash adulterado deveria falhar')
+    assert(hashEmailOptOut(email) === hashEmailOptOut('alguem@exemplo.com'), 'hash deve normalizar caixa')
+  })
+
+  console.log('\n📧 Email — lib')
+
+  await test('normalizarEmail valida e normaliza', async () => {
+    const { normalizarEmail } = await import('@/lib/email')
+    assert(normalizarEmail('  Foo@Bar.COM ') === 'foo@bar.com', 'deveria baixar caixa e trim')
+    assert(normalizarEmail('semarroba') === null, 'inválido deveria virar null')
+    assert(normalizarEmail(null) === null, 'null deveria virar null')
+  })
+
+  await test('montarHtmlEmail inclui corpo escapado e link de descadastro', async () => {
+    const { montarHtmlEmail } = await import('@/lib/email')
+    const html = montarHtmlEmail('Olá <b>mundo</b>\nlinha2', 'a@b.com', 'https://app.x')
+    assert(html.includes('Olá &lt;b&gt;mundo&lt;/b&gt;'), 'HTML deveria escapar tags do corpo')
+    assert(html.includes('linha2'), 'deveria manter conteúdo')
+    assert(html.includes('/api/optout?e=a%40b.com&h='), 'deveria conter link de descadastro assinado')
+    assert(/Descadastrar/i.test(html), 'deveria ter o texto Descadastrar')
+  })
+
+  await test('enfileirarEmail respeita opt-out e email inválido', async () => {
+    const { enfileirarEmail } = await import('@/lib/email')
+    const { registrarOptOutEmail } = await import('@/lib/optout')
+    const inval = await enfileirarEmail({ email: 'xxx', assunto: 'a', corpo: 'b' })
+    assert(inval.ok === false, 'email inválido não enfileira')
+    const bloqueado = `blk${Date.now()}@ex.com`
+    await registrarOptOutEmail(bloqueado)
+    const r = await enfileirarEmail({ email: bloqueado, assunto: 'a', corpo: 'b' })
+    assert(r.ok === false && r.motivo === 'opt-out', 'opt-out não enfileira')
+  })
+
+  await test('enfileirarBroadcastEmail só pega apoiador ativo com email e pula opt-out', async () => {
+    const { enfileirarBroadcastEmail } = await import('@/lib/email')
+    const { registrarOptOutEmail } = await import('@/lib/optout')
+    const stamp = Date.now()
+    await prisma.pessoa.create({ data: { nome: 'Com Email', tipo: 'apoiador', ativo: true, email: `a${stamp}@ex.com` } })
+    const optado = `b${stamp}@ex.com`
+    await prisma.pessoa.create({ data: { nome: 'Opt Out', tipo: 'apoiador', ativo: true, email: optado } })
+    await registrarOptOutEmail(optado)
+    await prisma.pessoa.create({ data: { nome: 'Sem Email', tipo: 'apoiador', ativo: true, email: null } })
+    const before = await prisma.emailFila.count()
+    const r = await enfileirarBroadcastEmail('assunto', 'corpo', 'broadcast', undefined, ['apoiador'])
+    const after = await prisma.emailFila.count()
+    assert(r.enfileirados >= 1, 'deveria enfileirar ao menos o apoiador com email válido')
+    assert(after - before === r.enfileirados, 'contagem enfileirada bate com as linhas criadas')
+  })
+
+  console.log('\n📧 Email — drain')
+
+  await test('drenarFilaEmail envia pendentes e marca enviado', async () => {
+    const { drenarFilaEmail } = await import('@/lib/emailDrain')
+    const stamp = Date.now()
+    await prisma.emailFila.create({ data: { email: `d${stamp}@ex.com`, assunto: 'a', corpo: 'oi {nome}' } })
+    const enviados: string[] = []
+    const r = await drenarFilaEmail({ enviar: async (email: string) => { enviados.push(email); return { ok: true, id: 'x' } }, esperar: async () => {} })
+    assert(enviados.includes(`d${stamp}@ex.com`), 'deveria ter chamado o envio')
+    assert(r.enviados >= 1, 'deveria contar ao menos 1 enviado')
+    const linha = await prisma.emailFila.findFirst({ where: { email: `d${stamp}@ex.com` } })
+    assert(linha?.status === 'enviado', `status deveria ser enviado, veio ${linha?.status}`)
+  })
+
+  await test('drenarFilaEmail respeita teto diário', async () => {
+    const { drenarFilaEmail } = await import('@/lib/emailDrain')
+    const stamp = Date.now()
+    await prisma.emailFila.create({ data: { email: `teto${stamp}@ex.com`, assunto: 'a', corpo: 'b' } })
+    const r = await drenarFilaEmail({ tetoDia: 0, enviar: async () => ({ ok: true }), esperar: async () => {} })
+    assert(r.tetoAtingido === true, 'com teto 0 deveria sinalizar tetoAtingido')
+    assert(r.enviados === 0, 'com teto 0 não envia nada')
+  })
+
+  await test('drenarFilaEmail cancela quem entrou em opt-out depois de enfileirado', async () => {
+    const { drenarFilaEmail } = await import('@/lib/emailDrain')
+    const { registrarOptOutEmail } = await import('@/lib/optout')
+    const stamp = Date.now()
+    const email = `canc${stamp}@ex.com`
+    await prisma.emailFila.create({ data: { email, assunto: 'a', corpo: 'b' } })
+    await registrarOptOutEmail(email)
+    const r = await drenarFilaEmail({ enviar: async () => ({ ok: true }), esperar: async () => {} })
+    assert(r.cancelados >= 1, 'deveria cancelar o opt-out')
+    const linha = await prisma.emailFila.findFirst({ where: { email } })
+    assert(linha?.status === 'cancelado', `status deveria ser cancelado, veio ${linha?.status}`)
+  })
+
+  console.log('\n📢 Disparo — fan-out email')
+
+  await test('validarCorpoDisparo aceita canal email e deriva assunto do titulo', async () => {
+    const { validarCorpoDisparo } = await import('@/lib/disparo')
+    const v = validarCorpoDisparo({ titulo: 'Novidades', mensagem: 'oi', canais: ['email'] })
+    assert(v.ok === true, `deveria validar, erro=${v.erro}`)
+    assert(v.valor?.assunto === 'Novidades', 'assunto default deveria ser o titulo')
+    const v2 = validarCorpoDisparo({ titulo: 'T', mensagem: 'oi', canais: ['email'], assunto: 'Assunto Custom' })
+    assert(v2.valor?.assunto === 'Assunto Custom', 'assunto explícito deveria prevalecer')
+  })
+
+  await test('dispararCampanha enfileira email para apoiador com email', async () => {
+    const { dispararCampanha } = await import('@/lib/disparo')
+    const stamp = Date.now()
+    await prisma.pessoa.create({ data: { nome: 'Fan Email', tipo: 'apoiador', ativo: true, email: `fan${stamp}@ex.com` } })
+    const before = await prisma.emailFila.count()
+    const r = await dispararCampanha({ titulo: 'Camp', mensagem: 'corpo', audiencia: ['apoiador'], canais: ['email'] })
+    const after = await prisma.emailFila.count()
+    assert(r.email >= 1, 'deveria contar email enfileirado')
+    assert(after > before, 'deveria ter criado linha na EmailFila')
+  })
+
+  console.log('\n🚪 Opt-out — rota (lógica)')
+
+  await test('fluxo de descadastro: hash válido grava opt-out; inválido não', async () => {
+    const { hashEmailOptOut, verificarHashOptOut, estaOptOutEmail, registrarOptOutEmail } = await import('@/lib/optout')
+    const { normalizarEmail } = await import('@/lib/email')
+    const email = normalizarEmail(`unsub${Date.now()}@ex.com`)!
+    const h = hashEmailOptOut(email)
+    assert(verificarHashOptOut(email, 'deadbeef') === false, 'hash inválido rejeitado')
+    assert((await estaOptOutEmail(email)) === false, 'não deveria estar opt-out com hash inválido')
+    assert(verificarHashOptOut(email, h) === true, 'hash válido aceito')
+    await registrarOptOutEmail(email, 'link de descadastro')
+    assert((await estaOptOutEmail(email)) === true, 'deveria estar opt-out após fluxo válido')
+  })
+
   // ── Resultado final ──────────────────────────────────────────────────────────
   console.log('\n' + '─'.repeat(50))
   if (failed === 0) {
