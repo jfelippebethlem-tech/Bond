@@ -9,6 +9,7 @@ export default function DisparosPage() {
   const [campanhas, setCampanhas] = useState<Campanha[]>([])
   const [smsOnline, setSmsOnline] = useState<boolean | null>(null)
   const [titulo, setTitulo] = useState('')
+  const [assunto, setAssunto] = useState('')
   const [mensagem, setMensagem] = useState('')
   const [canais, setCanais] = useState<string[]>(['whatsapp'])
   const [novoRotulo, setNovoRotulo] = useState('')
@@ -44,10 +45,10 @@ export default function DisparosPage() {
     try {
       const r = await fetch('/api/disparos', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ titulo, mensagem, canais, audiencia: ['apoiador', 'coordenador'] }),
+        body: JSON.stringify({ titulo, mensagem, assunto: assunto || undefined, canais, audiencia: ['apoiador', 'coordenador'] }),
       }).then((x) => x.json())
       if (r.erro) setMsg('Erro: ' + r.erro)
-      else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS (alvo: ${r.totalAlvo})`); setTitulo(''); setMensagem(''); carregar() }
+      else { setMsg(`Enfileirado: ${r.whatsapp} WhatsApp + ${r.sms} SMS + ${r.email} Email (alvo: ${r.totalAlvo})`); setTitulo(''); setAssunto(''); setMensagem(''); carregar() }
     } catch {
       setMsg('Erro ao disparar (rede/servidor). Nada foi enviado.')
     }
@@ -70,10 +71,14 @@ export default function DisparosPage() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Compor disparo</h2>
         <input className="w-full border rounded p-2" placeholder="Título da campanha" value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+        {canais.includes('email') && (
+          <input className="w-full border rounded p-2" placeholder="Assunto do email (vazio = usa o título)" value={assunto} onChange={(e) => setAssunto(e.target.value)} />
+        )}
         <textarea className="w-full border rounded p-2 h-28" placeholder="Mensagem (use {nome} para personalizar)" value={mensagem} onChange={(e) => setMensagem(e.target.value)} />
-        <div className="flex gap-4">
+        <div className="flex gap-4 flex-wrap">
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('whatsapp')} onChange={() => toggleCanal('whatsapp')} /> WhatsApp</label>
           <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('sms')} disabled={smsOnline === false} onChange={() => toggleCanal('sms')} /> SMS {smsOnline === false && <span className="text-red-500 text-xs">(gateway offline)</span>}</label>
+          <label className="flex items-center gap-2"><input type="checkbox" checked={canais.includes('email')} onChange={() => toggleCanal('email')} /> 📧 Email <span className="text-xs text-gray-400">(grátis · 300/dia)</span></label>
         </div>
         <button className="bg-blue-600 text-white rounded px-4 py-2" onClick={disparar}>Disparar</button>
         {msg && <p className="text-sm">{msg}</p>}

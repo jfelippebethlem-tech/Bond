@@ -267,7 +267,7 @@ foram verificados na fonte em 2026; qualquer provider pago tem custo por mensage
 
 | Fase | Entrega | Valor |
 |---|---|---|
-| **1** | Canal **Email** (Brevo) fim-a-fim: lib+fila+worker+opt-out+UI+testes | ⭐ grátis, online, zero risco |
+| **1** ✅ entregue 2026-07-21 | Canal **Email** (Brevo) fim-a-fim: lib+fila+worker+opt-out+UI+testes | ⭐ grátis, online, zero risco |
 | **2** | Canal **Telegram** (broadcast em canal): lib+fila+worker+UI+testes | ⭐ grátis, zero ban |
 | **3** | **SMS plugável** (android+gammu+rest atrás de interface) + status na UI | "tentar todas" |
 | **4** | Go-live: pareamento WhatsApp (chips descartáveis) + config Brevo/TG/SMS + teste real numa fatia pequena da lista | ligar de verdade |
