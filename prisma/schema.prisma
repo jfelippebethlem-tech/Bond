@@ -425,6 +425,25 @@ model EmailFila {
   @@index([status])
 }
 
+// ── Fila de mensagens Telegram (broadcast em canal via Bot API, grátis) ──
+model TelegramFila {
+  id           String    @id @default(cuid())
+  destino      String    // "@canal" ou chat_id numérico
+  modo         String    @default("canal") // canal|dm
+  mensagem     String
+  tipo         String    @default("broadcast")
+  status       String    @default("pendente") // pendente|enviado|erro|cancelado
+  erro         String?
+  pessoaId     String?
+  campanhaId   String?
+  tentativas   Int       @default(0)
+  agendadoPara DateTime?
+  criadoEm     DateTime  @default(now())
+  enviadoEm    DateTime?
+
+  @@index([status])
+}
+
 model Disparo {
   id           String   @id @default(cuid())
   titulo       String

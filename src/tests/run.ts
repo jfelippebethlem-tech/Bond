@@ -752,6 +752,61 @@ async function main() {
     assert((await estaOptOutEmail(email)) === true, 'deveria estar opt-out após fluxo válido')
   })
 
+  console.log('\n✈️  Telegram — lib')
+
+  await test('enfileirarBroadcastTelegram cria 1 linha p/ o canal configurado', async () => {
+    const { enfileirarBroadcastTelegram } = await import('@/lib/telegram-broadcast')
+    process.env.TELEGRAM_CANAL = '@canal_teste'
+    const before = await prisma.telegramFila.count()
+    const r = await enfileirarBroadcastTelegram('oi canal', 'broadcast', undefined)
+    const after = await prisma.telegramFila.count()
+    assert(r.enfileirados === 1, 'deveria enfileirar 1')
+    assert(r.destino === '@canal_teste', 'destino deveria ser o canal')
+    assert(after - before === 1, 'deveria criar 1 linha')
+  })
+
+  await test('enfileirarBroadcastTelegram sem canal configurado não enfileira', async () => {
+    const { enfileirarBroadcastTelegram } = await import('@/lib/telegram-broadcast')
+    delete process.env.TELEGRAM_CANAL
+    const before = await prisma.telegramFila.count()
+    const r = await enfileirarBroadcastTelegram('oi', 'broadcast', undefined)
+    const after = await prisma.telegramFila.count()
+    assert(r.enfileirados === 0, 'sem canal não enfileira')
+    assert(after === before, 'não cria linha')
+  })
+
+  console.log('\n✈️  Telegram — drain')
+
+  await test('drenarFilaTelegram envia pendentes e marca enviado', async () => {
+    const { drenarFilaTelegram } = await import('@/lib/telegramDrain')
+    await prisma.telegramFila.create({ data: { destino: '@c', modo: 'canal', mensagem: `tg${Date.now()}` } })
+    const enviados: string[] = []
+    const r = await drenarFilaTelegram({ enviar: async (destino: string) => { enviados.push(destino); return { ok: true, id: '1' } }, esperar: async () => {} })
+    assert(r.enviados >= 1, 'deveria enviar ao menos 1')
+    assert(enviados.includes('@c'), 'deveria mandar pro destino')
+  })
+
+  await test('drenarFilaTelegram marca erro após esgotar tentativas', async () => {
+    const { drenarFilaTelegram } = await import('@/lib/telegramDrain')
+    const id = (await prisma.telegramFila.create({ data: { destino: '@x', modo: 'canal', mensagem: 'f', tentativas: 2 } })).id
+    const r = await drenarFilaTelegram({ enviar: async () => ({ ok: false, erro: 'boom' }), esperar: async () => {} })
+    assert(r.falhas >= 1, 'deveria contar falha')
+    const linha = await prisma.telegramFila.findUnique({ where: { id } })
+    assert(linha?.status === 'erro', `status deveria ser erro, veio ${linha?.status}`)
+  })
+
+  console.log('\n📢 Disparo — fan-out telegram')
+
+  await test('dispararCampanha enfileira telegram quando canal configurado', async () => {
+    const { dispararCampanha } = await import('@/lib/disparo')
+    process.env.TELEGRAM_CANAL = '@canal_teste'
+    const before = await prisma.telegramFila.count()
+    const r = await dispararCampanha({ titulo: 'C', mensagem: 'oi', audiencia: ['apoiador'], canais: ['telegram'] })
+    const after = await prisma.telegramFila.count()
+    assert(r.telegram === 1, 'deveria contar 1 telegram')
+    assert(after - before === 1, 'deveria criar 1 linha')
+  })
+
   // ── Resultado final ──────────────────────────────────────────────────────────
   console.log('\n' + '─'.repeat(50))
   if (failed === 0) {
