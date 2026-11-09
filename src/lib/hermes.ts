@@ -10,46 +10,38 @@ function forcarFree(model: string): string {
   if (m === 'openrouter/free' || m.endsWith(':free')) return m
   return m.split(':')[0] + ':free'
 }
-const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'meta-llama/llama-3.3-70b-instruct:free')
+const HERMES_MODEL = forcarFree(process.env.OPENROUTER_MODEL || 'nvidia/nemotron-3.5-super-vl:free')
 
 async function callAI(
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[],
   maxTokens = 1024
 ): Promise<string> {
-  // Cerebras (rápido, com saldo) — primário (mesma IA do topo do Yoda). JFN 2026-06-21.
-  if (process.env.CEREBRAS_API_KEY) {
-    try {
-      const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ model: 'gpt-oss-120b', messages, max_tokens: maxTokens }),
-      })
-      const data = await res.json()
-      const text = data?.choices?.[0]?.message?.content
-      if (text) return text
-    } catch {}
-  }
-
-  // Gemini (confiável) — 2º, antes do OpenRouter flaky. JFN 2026-06-21.
+  // 09/11/2026: Cerebras SAIU — era crédito único de US$5 (402), não free recorrente (auditoria das chaves).
+  // Gemini 1º, em CASCATA de modelos (a cota free é POR MODELO; 503 "alta demanda" é do modelo): se um
+  // falhar, tenta o próximo e, se todos falharem, cai no OpenRouter :free — antes um erro do Gemini
+  // derrubava a chamada inteira sem chegar ao OpenRouter.
   if (process.env.GEMINI_API_KEY) {
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-    const model = genAI.getGenerativeModel({
-      model: 'gemini-2.5-flash',
-      systemInstruction: messages.find((m) => m.role === 'system')?.content,
-      generationConfig: { maxOutputTokens: maxTokens },
-    })
     const userMessages = messages.filter((m) => m.role !== 'system')
     const last = userMessages.at(-1)?.content ?? ''
     const history = userMessages.slice(0, -1).map((m) => ({
       role: m.role === 'user' ? 'user' : 'model',
       parts: [{ text: m.content }],
     }))
-    const chat = model.startChat({ history })
-    const result = await chat.sendMessage(last)
-    return result.response.text()
+    for (const nome of ['gemini-3-flash-preview', 'gemini-3.6-flash', 'gemini-2.5-flash']) {
+      try {
+        const model = genAI.getGenerativeModel({
+          model: nome,
+          systemInstruction: messages.find((m) => m.role === 'system')?.content,
+          generationConfig: { maxOutputTokens: Math.max(maxTokens, 2048) },
+        })
+        const result = await model.startChat({ history }).sendMessage(last)
+        const text = result.response.text()
+        if (text) return text
+      } catch (e) {
+        console.warn(`[hermes] ${nome} falhou, tentando o próximo:`, String(e).slice(0, 160))
+      }
+    }
   }
 
   // OpenRouter (APENAS :free — regra do dono) — fallback final. JFN 2026-06-21.
@@ -66,6 +58,8 @@ async function callAI(
         model: HERMES_MODEL,
         messages,
         max_tokens: maxTokens,
+        // nemotron é modelo de raciocínio: com teto baixo gasta tudo pensando e devolve content vazio
+        ...(HERMES_MODEL.includes('nemotron') ? { reasoning: { enabled: false } } : {}),
       }),
     })
     const data = await res.json()
